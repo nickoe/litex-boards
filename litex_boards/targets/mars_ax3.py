@@ -20,6 +20,7 @@ from litex.soc.integration.soc_core import *
 from litex.soc.integration.soc_sdram import *
 from litex.soc.integration.builder import *
 from litex.soc.cores.led import LedChaser
+from litex.soc.cores.spi_flash import SpiFlash
 
 from litedram.modules import NT5CC128M16
 from litedram.phy import s7ddrphy
@@ -110,7 +111,7 @@ class BaseSoC(SoCCore):
                 size=0x100)
 
         # Memory mapped SPI Flash ------------------------------------------------------------------
-        '''
+
         spiflash_pads = platform.request(spiflash)
         spiflash_pads.clk = Signal()
         self.specials += Instance(
@@ -121,7 +122,7 @@ class BaseSoC(SoCCore):
             "spiflash_1x": 9,
             "spiflash_4x": 11,
         }
-        self.submodules.spiflash = spi_flash.SpiFlash(
+        self.submodules.spiflash = SpiFlash(
             spiflash_pads,
             dummy=spiflash_dummy[spiflash],
             div=platform.spiflash_clock_div,
@@ -139,10 +140,10 @@ class BaseSoC(SoCCore):
             self.mem_map["spiflash"],
             platform.spiflash_total_size)
         
-        bios_size = 0x8000
-        self.flash_boot_address = self.mem_map["spiflash"]+platform.gateware_size+bios_size
-        define_flash_constants(self)
-        '''
+        #bios_size = 0x8000
+        #self.flash_boot_address = self.mem_map["spiflash"]+platform.gateware_size+bios_size
+        #define_flash_constants(self)
+
         # Mars AX3 specific stuff
         self.comb += platform.request("ddr3_vsel").eq(0)
 
@@ -189,10 +190,10 @@ def main():
         **soc_sdram_argdict(args)
     )
     #soc.platform.add_extension(arty._sdcard_pmod_io)
-    #if args.with_spi_sdcard:
-    #    soc.add_spi_sdcard()
-    #if args.with_sdcard:
-    #    soc.add_sdcard()
+    if args.with_spi_sdcard:
+        soc.add_spi_sdcard()
+    if args.with_sdcard:
+        soc.add_sdcard()
     builder = Builder(soc, **builder_argdict(args))
     builder_kwargs = vivado_build_argdict(args) if args.toolchain == "vivado" else {}
     builder.build(**builder_kwargs, run=args.build)
