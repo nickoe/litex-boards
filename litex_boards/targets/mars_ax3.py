@@ -93,15 +93,6 @@ class BaseSoC(SoCCore):
                 l2_cache_reverse        = True
             )
 
-
-
-        ## TODO are these needed in the new litex?
-        # Basic peripherals ------------------------------------------------------------------------
-        #self.submodules.info = info.Info(platform, self.__class__.__name__)
-        #self.add_csr("info")
-        #self.submodules.cas = cas.ControlAndStatus(platform, sys_clk_freq)
-        #self.add_csr("cas")
-
         # Add debug interface if the CPU has one ---------------------------------------------------
         if hasattr(self.cpu, "debug_bus"):
             self.register_mem(
@@ -146,9 +137,6 @@ class BaseSoC(SoCCore):
 
         # Mars AX3 specific stuff
         self.comb += platform.request("ddr3_vsel").eq(0)
-
-        self.add_spi_sdcard()
-        #self.comb += platform.request("user_led", 0).eq(1)
 
         # Leds -------------------------------------------------------------------------------------
         self.submodules.leds = LedChaser(
