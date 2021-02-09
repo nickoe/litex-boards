@@ -58,7 +58,7 @@ class _CRG(Module):
 
 class BaseSoC(SoCCore):
     mem_map = {**SoCCore.mem_map, **{"spiflash": 0x20000000}}
-    def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(50e6), with_ethernet=False, with_etherbone=False, eth_ip="192.168.1.50", ident_version=True, **kwargs):
+    def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(100e6), with_ethernet=False, with_etherbone=False, eth_ip="192.168.1.50", ident_version=True, **kwargs):
         platform = mars_ax3.Platform(toolchain=toolchain)
 
         # SoCCore ----------------------------------------------------------------------------------
@@ -69,7 +69,7 @@ class BaseSoC(SoCCore):
 
 
 
-        sys_clk_freq = int(50e6)
+        sys_clk_freq = int(100e6)
         # SoCSDRAM ---------------------------------------------------------------------------------
         #SoCSDRAM.__init__(self, platform, clk_freq=sys_clk_freq, **kwargs)
 
@@ -154,7 +154,7 @@ def main():
     parser.add_argument("--toolchain",        default="vivado",                 help="Toolchain use to build (default: vivado)")
     parser.add_argument("--build",            action="store_true",              help="Build bitstream")
     parser.add_argument("--load",             action="store_true",              help="Load bitstream")
-    parser.add_argument("--sys-clk-freq",     default=50e6,                    help="System clock frequency (default: 50MHz)")
+    parser.add_argument("--sys-clk-freq",     default=100e6,                    help="System clock frequency (default: 50MHz)")
     #ethopts = parser.add_mutually_exclusive_group()
     #ethopts.add_argument("--with-ethernet",   action="store_true",              help="Enable Ethernet support")
     #ethopts.add_argument("--with-etherbone",  action="store_true",              help="Enable Etherbone support")
