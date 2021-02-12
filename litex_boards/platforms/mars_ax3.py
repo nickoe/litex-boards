@@ -86,6 +86,13 @@ _io = [
      Misc("SLEW=FAST"),
      IOStandard("LVCMOS33"),
      ),
+    # MAX5854 Dual, 10-Bit, 165Msps, Current-Output DAC
+    # https://www.maximintegrated.com/en/products/analog/data-converters/digital-to-analog-converters/MAX5854.html
+    ("dac", 0,
+        Subsignal("data_a", Pins("R1 T1 U1 V1 U4 U3 U2 V2 V7 V6"), IOStandard("LVCMOS33")),
+        Subsignal("data_b", Pins("N5 P5 L1 M1 N2 N1 P4 P3 R6 R5"), IOStandard("LVCMOS33")),
+        Subsignal("cw", Pins("L3"), IOStandard("LVCMOS33")),
+    )
 ]
 
 _connectors = []

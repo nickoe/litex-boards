@@ -22,6 +22,9 @@ from litex.soc.integration.builder import *
 from litex.soc.cores.led import LedChaser
 from litex.soc.cores.spi_flash import SpiFlash
 
+from litex.soc.interconnect.csr import *
+
+
 from litedram.modules import NT5CC128M16
 from litedram.phy import s7ddrphy
 
@@ -53,6 +56,24 @@ class _CRG(Module):
         self.submodules.idelayctrl = S7IDELAYCTRL(self.cd_idelay)
 
         #self.comb += platform.request("eth_ref_clk").eq(self.cd_eth.clk)
+
+
+
+class _MyDAC(Module, AutoCSR):
+    def __init__(self, data_a, data_b, cw, sys_clk_freq, period=1e0):
+        self.cw = CSRStorage(1, description="DAC code word register")
+        self.data_a_storage = CSRStorage(10, fields=[
+                                   CSRField("a", description="Data A", size=10),
+                               ], description="DAC data register",)
+        self.data_b_storage = CSRStorage(10, fields=[
+                                   CSRField("b", description="Data B", size=10),
+                               ], description="DAC data register",)
+        self.comb += [
+            data_a.eq(self.data_a_storage.storage[0:10]),
+            data_b.eq(self.data_b_storage.storage[0:10]),
+            cw.eq(self.cw.storage)
+        ]
+
 
 # BaseSoC ------------------------------------------------------------------------------------------
 
@@ -143,7 +164,13 @@ class BaseSoC(SoCCore):
             pads         = platform.request_all("user_led"),
             sys_clk_freq = sys_clk_freq)
         self.add_csr("leds")
-
+        dac_plat = platform.request("dac")
+        self.submodules.dac = _MyDAC(
+            data_a=dac_plat.data_a,
+            data_b=dac_plat.data_b,
+            cw=dac_plat.cw,
+            sys_clk_freq=sys_clk_freq)
+        self.add_csr("dac")
 
 
 
