@@ -172,6 +172,7 @@ class BaseSoC(SoCCore):
             sys_clk_freq=sys_clk_freq)
         self.add_csr("dac")
 
+        self.add_jtagbone()
 
 
 # Build --------------------------------------------------------------------------------------------
