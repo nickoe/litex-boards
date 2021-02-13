@@ -14,6 +14,7 @@ from migen import *
 
 from litex_boards.platforms import mars_ax3
 from litex.build.xilinx.vivado import vivado_build_args, vivado_build_argdict
+from litex.build.io import DifferentialOutput
 
 from litex.soc.cores.clock import *
 from litex.soc.integration.soc_core import *
@@ -39,6 +40,7 @@ class _CRG(Module):
         self.clock_domains.cd_sys4x     = ClockDomain(reset_less=True)
         self.clock_domains.cd_sys4x_dqs = ClockDomain(reset_less=True)
         self.clock_domains.cd_idelay    = ClockDomain()
+        self.clock_domains.cd_dac       = ClockDomain()
         #self.clock_domains.cd_eth       = ClockDomain()
 
         # # #
@@ -50,6 +52,7 @@ class _CRG(Module):
         pll.create_clkout(self.cd_sys4x,     4*sys_clk_freq)
         pll.create_clkout(self.cd_sys4x_dqs, 4*sys_clk_freq, phase=90)
         pll.create_clkout(self.cd_idelay,    200e6)
+        pll.create_clkout(self.cd_dac, 100e6)
         #pll.create_clkout(self.cd_eth,       25e6)
         platform.add_false_path_constraints(self.cd_sys.clk, pll.clkin) # Ignore sys_clk to pll.clkin path created by SoC's rst.
 
@@ -164,6 +167,8 @@ class BaseSoC(SoCCore):
             pads         = platform.request_all("user_led"),
             sys_clk_freq = sys_clk_freq)
         self.add_csr("leds")
+
+        # MAX DAC...
         dac_plat = platform.request("dac")
         self.submodules.dac = _MyDAC(
             data_a=dac_plat.data_a,
@@ -171,6 +176,9 @@ class BaseSoC(SoCCore):
             cw=dac_plat.cw,
             sys_clk_freq=sys_clk_freq)
         self.add_csr("dac")
+
+        # clocking for the DAC
+        self.specials += DifferentialOutput(self.crg.cd_dac.clk, dac_plat.clkx_p, dac_plat.clkx_n)
 
         self.add_jtagbone()
 
