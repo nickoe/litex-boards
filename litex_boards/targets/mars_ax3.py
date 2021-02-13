@@ -131,7 +131,7 @@ class BaseSoC(SoCCore):
             i_CLK=0, i_GSR=0, i_GTS=0, i_KEYCLEARB=0, i_PACK=0,
             i_USRCCLKO=spiflash_pads.clk, i_USRCCLKTS=0, i_USRDONEO=1, i_USRDONETS=1)
         spiflash_dummy = {
-            "spiflash_1x": 9,
+            "spiflash_1x": 8,
             "spiflash_4x": 11,
         }
         self.submodules.spiflash = SpiFlash(
