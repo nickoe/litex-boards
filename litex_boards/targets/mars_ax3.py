@@ -41,6 +41,7 @@ class _CRG(Module):
         self.clock_domains.cd_sys4x_dqs = ClockDomain(reset_less=True)
         self.clock_domains.cd_idelay    = ClockDomain()
         self.clock_domains.cd_dac       = ClockDomain()
+        self.clock_domains.cd_dac_180   = ClockDomain()
         #self.clock_domains.cd_eth       = ClockDomain()
 
         # # #
@@ -52,7 +53,9 @@ class _CRG(Module):
         pll.create_clkout(self.cd_sys4x,     4*sys_clk_freq)
         pll.create_clkout(self.cd_sys4x_dqs, 4*sys_clk_freq, phase=90)
         pll.create_clkout(self.cd_idelay,    200e6)
-        pll.create_clkout(self.cd_dac, 100e6)
+        pll.create_clkout(self.cd_dac,       10e6)
+        pll.create_clkout(self.cd_dac_180,   10e6, phase=180)
+
         #pll.create_clkout(self.cd_eth,       25e6)
         platform.add_false_path_constraints(self.cd_sys.clk, pll.clkin) # Ignore sys_clk to pll.clkin path created by SoC's rst.
 
@@ -178,7 +181,17 @@ class BaseSoC(SoCCore):
         self.add_csr("dac")
 
         # clocking for the DAC
-        self.specials += DifferentialOutput(self.crg.cd_dac.clk, dac_plat.clkx_p, dac_plat.clkx_n)
+        # As the differential output is in the same bank as the other signals that are LVCMOS33 we
+        # can't really drive this as a diff out. :(
+        # And the logic inputs needs 0.64*DVdd = 2.145 V for high state..
+        #self.specials += DifferentialOutput(self.crg.cd_dac.clk, dac_plat.clkx_p, dac_plat.clkx_n)
+
+        self.comb += dac_plat.clkx_p.eq(self.crg.cd_dac.clk)
+        self.comb += dac_plat.clkx_n.eq(self.crg.cd_dac_180.clk)
+        self.comb += dac_plat.clkx_test.eq(self.crg.cd_dac.clk)
+        self.comb += dac_plat.clkx_test2.eq(self.crg.cd_dac_180.clk)
+
+
 
         self.add_jtagbone()
 
