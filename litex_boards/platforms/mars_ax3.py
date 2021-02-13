@@ -24,14 +24,18 @@ _io = [
         Subsignal("tx", Pins("U13")),
         Subsignal("rx", Pins("U11")),
         IOStandard("LVCMOS33")),
-
+    #The FLASH_CLK_FPGA_CCLK isconnected to one pin on the header, and two pads on the artix7...??
+    #FLASH_CLK_FPGA_CCLK	E9	CCLK_0	 182	FPGA config clock
+    #FLASH_CLK_FPGA_CCLK	R10	IO_25_14 182	connected to a user IO for flash access after configuration
     ("spiflash_4x", 0,  # clock needs to be accessed through STARTUPE2 (nick has no idea what this means)
         Subsignal("cs_n", Pins("L13")),
+        Subsignal("clk", Pins("R10")),
         Subsignal("dq", Pins("K17", "K18", "L14", "M14")),
         IOStandard("LVCMOS33")
     ),
     ("spiflash_1x", 0,  # clock needs to be accessed through STARTUPE2 (nick has no idea what this means)
         Subsignal("cs_n", Pins("L13")),
+        Subsignal("clk", Pins("R10")),
         Subsignal("mosi", Pins("K17")),
         Subsignal("miso", Pins("K18")),
         Subsignal("wp", Pins("L14")),
