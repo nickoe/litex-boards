@@ -48,29 +48,29 @@ _io = [
      Subsignal("a", Pins(
          "J17 J14 J18 D18 J13 E17 K13 E18",
          "H17 F18 G16 G18 H16 G17 H15"),
-               IOStandard("SSTL135")),
-     Subsignal("ba", Pins("D17 H14 K15"), IOStandard("SSTL135")),
-     Subsignal("ras_n", Pins("F15"), IOStandard("SSTL135")),
-     Subsignal("cas_n", Pins("F16"), IOStandard("SSTL135")),
-     Subsignal("we_n", Pins("J15"), IOStandard("SSTL135")),
-     #Subsignal("cs_n", Pins(""), IOStandard("SSTL135")), # 100R pulldown on board
-     Subsignal("dm", Pins("D15 D12"), IOStandard("SSTL135")),
+               IOStandard("SSTL15")),
+     Subsignal("ba", Pins("D17 H14 K15"), IOStandard("SSTL15")),
+     Subsignal("ras_n", Pins("F15"), IOStandard("SSTL15")),
+     Subsignal("cas_n", Pins("F16"), IOStandard("SSTL15")),
+     Subsignal("we_n", Pins("J15"), IOStandard("SSTL15")),
+     #Subsignal("cs_n", Pins(""), IOStandard("SSTL15")), # 100R pulldown on board
+     Subsignal("dm", Pins("D15 D12"), IOStandard("SSTL15")),
      Subsignal("dq", Pins(
          "A18 E16 A15 E15 B18 B17 A16 B16",
          "B14 C14 B13 D14 F13 A11 F14 B11"),
-               IOStandard("SSTL135"),
+               IOStandard("SSTL15"),
                Misc("IN_TERM=UNTUNED_SPLIT_40")),
      Subsignal("dqs_p", Pins("A13 C12"),
-               IOStandard("DIFF_SSTL135"),
+               IOStandard("DIFF_SSTL15"),
                Misc("IN_TERM=UNTUNED_SPLIT_40")),
      Subsignal("dqs_n", Pins("A14 B12"),
-               IOStandard("DIFF_SSTL135"),
+               IOStandard("DIFF_SSTL15"),
                Misc("IN_TERM=UNTUNED_SPLIT_40")),
-     Subsignal("clk_p", Pins("C16"), IOStandard("DIFF_SSTL135")),
-     Subsignal("clk_n", Pins("C17"), IOStandard("DIFF_SSTL135")),
-     Subsignal("cke", Pins("G14"), IOStandard("SSTL135")),
-     Subsignal("odt", Pins("K16"), IOStandard("SSTL135")),
-     Subsignal("reset_n", Pins("G13"), IOStandard("SSTL135")),
+     Subsignal("clk_p", Pins("C16"), IOStandard("DIFF_SSTL15")),
+     Subsignal("clk_n", Pins("C17"), IOStandard("DIFF_SSTL15")),
+     Subsignal("cke", Pins("G14"), IOStandard("SSTL15")),
+     Subsignal("odt", Pins("K16"), IOStandard("SSTL15")),
+     Subsignal("reset_n", Pins("G13"), IOStandard("LVCMOS15")),
      Misc("SLEW=FAST"),
      ),
     # 2.14.5
@@ -80,7 +80,7 @@ _io = [
     # must be driven logic 0 by the FPGA logic, and a memory voltage of 1.35 V must be selected in the Memory
     # Interface Generator (MIG) parameters in Vivado.
     # For 1.5 V operation, DDR3_VSEL must be set to high impedance (not driven logic 1).
-    ("ddr3_vsel", 0, Pins("D9"), IOStandard("LVCMOS33")),
+    #("ddr3_vsel", 0, Pins("D9"), IOStandard("LVCMOS33")),
     # SD carg via SPI connection
     ("spisdcard", 0,
      Subsignal("clk", Pins("B4")),
@@ -137,7 +137,8 @@ class Platform(XilinxPlatform):
             ["write_cfgmem -force -format bin -interface spix4 -size 16 "
              "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
         #self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 34]")
-        self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 15]")
+        #self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 15]") # LV
+        self.add_platform_command("set_property INTERNAL_VREF 0.750 [get_iobanks 15]")  # 1.5V
         self.programmer = programmer
 
 

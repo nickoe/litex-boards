@@ -117,7 +117,8 @@ class BaseSoC(SoCCore):
                 size                    = kwargs.get("max_sdram_size", 0x40000000),
                 l2_cache_size           = kwargs.get("l2_size", 8192),
                 l2_cache_min_data_width = kwargs.get("min_l2_data_width", 128),
-                l2_cache_reverse        = True
+                l2_cache_reverse        = True,
+                with_bist               = True
             )
 
         # Add debug interface if the CPU has one ---------------------------------------------------
@@ -157,13 +158,15 @@ class BaseSoC(SoCCore):
             "spiflash",
             self.mem_map["spiflash"],
             platform.spiflash_total_size)
-        
+
+
+
         #bios_size = 0x8000
         #self.flash_boot_address = self.mem_map["spiflash"]+platform.gateware_size+bios_size
         #define_flash_constants(self)
 
         # Mars AX3 specific stuff
-        self.comb += platform.request("ddr3_vsel").eq(0)
+        #self.comb += platform.request("ddr3_vsel").eq(0) # only for LV RAM operation
 
         # Leds -------------------------------------------------------------------------------------
         self.submodules.leds = LedChaser(
