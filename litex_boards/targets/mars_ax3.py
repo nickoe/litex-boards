@@ -88,17 +88,14 @@ class BaseSoC(SoCCore):
     def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(100e6), with_ethernet=False, with_etherbone=False, eth_ip="192.168.1.50", ident_version=True, **kwargs):
         platform = mars_ax3.Platform(toolchain=toolchain)
 
+        # Increasing the integration rom size as we would like to enable SPI mode SDcard in bios
+        kwargs["integrated_rom_size"] = 0x10000
+
         # SoCCore ----------------------------------------------------------------------------------
         SoCCore.__init__(self, platform, sys_clk_freq,
             ident          = "LiteX SoC on Mars AX3 (IQFPGA) AAUAST6",
             ident_version  = ident_version,
             **kwargs)
-
-
-
-        sys_clk_freq = int(100e6)
-        # SoCSDRAM ---------------------------------------------------------------------------------
-        #SoCSDRAM.__init__(self, platform, clk_freq=sys_clk_freq, **kwargs)
 
         # CRG --------------------------------------------------------------------------------------
         self.submodules.crg = _CRG(platform, sys_clk_freq)
@@ -158,12 +155,6 @@ class BaseSoC(SoCCore):
             "spiflash",
             self.mem_map["spiflash"],
             platform.spiflash_total_size)
-
-
-
-        #bios_size = 0x8000
-        #self.flash_boot_address = self.mem_map["spiflash"]+platform.gateware_size+bios_size
-        #define_flash_constants(self)
 
         # Mars AX3 specific stuff
         #self.comb += platform.request("ddr3_vsel").eq(0) # only for LV RAM operation
