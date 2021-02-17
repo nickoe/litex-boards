@@ -6,12 +6,12 @@ from litex.build.openocd import OpenOCD
 from litex.build.xilinx import XilinxPlatform, XC3SProg, VivadoProgrammer
 
 _io = [
-    ("user_led", 0, Pins("M16"), IOStandard("LVCMOS33")),
-    ("user_led", 1, Pins("M17"), IOStandard("LVCMOS33")),
-    ("user_led", 2, Pins("L18"), IOStandard("LVCMOS33")),
-    ("user_led", 3, Pins("M18"), IOStandard("LVCMOS33")),
+    ("user_led", 0, Pins("M16"), IOStandard("LVCMOS18")),
+    ("user_led", 1, Pins("M17"), IOStandard("LVCMOS18")),
+    ("user_led", 2, Pins("L18"), IOStandard("LVCMOS18")),
+    ("user_led", 3, Pins("M18"), IOStandard("LVCMOS18")),
 
-    ("clk50", 0, Pins("P17"), IOStandard("LVCMOS33")),
+    ("clk50", 0, Pins("P17"), IOStandard("LVCMOS18")),
 
     # not really connected, but arty soc example uses this -- I think
     ("cpu_reset", 0, Pins("C2"), IOStandard("LVCMOS33")),
@@ -23,7 +23,7 @@ _io = [
     ("serial", 0,
         Subsignal("tx", Pins("U13")),
         Subsignal("rx", Pins("U11")),
-        IOStandard("LVCMOS33")),
+        IOStandard("LVCMOS18")),
     #The FLASH_CLK_FPGA_CCLK isconnected to one pin on the header, and two pads on the artix7...??
     #FLASH_CLK_FPGA_CCLK	E9	CCLK_0	 182	FPGA config clock
     #FLASH_CLK_FPGA_CCLK	R10	IO_25_14 182	connected to a user IO for flash access after configuration
@@ -31,7 +31,7 @@ _io = [
         Subsignal("cs_n", Pins("L13")),
         Subsignal("clk", Pins("R10")),
         Subsignal("dq", Pins("K17", "K18", "L14", "M14")),
-        IOStandard("LVCMOS33")
+        IOStandard("LVCMOS18")
     ),
     ("spiflash_1x", 0,  # clock needs to be accessed through STARTUPE2 (nick has no idea what this means)
         Subsignal("cs_n", Pins("L13")),
@@ -40,7 +40,7 @@ _io = [
         Subsignal("miso", Pins("K18")),
         Subsignal("wp", Pins("L14")),
         Subsignal("hold", Pins("M14")),
-        IOStandard("LVCMOS33")
+        IOStandard("LVCMOS18")
     ),
     # DDR3 SDRAM
     # TODO remember to add "on die termination", see 2.14.3 Termination
@@ -100,7 +100,55 @@ _io = [
         Subsignal("clkx_n", Pins("L4"), IOStandard("LVCMOS33")),
         Subsignal("clkx_test", Pins("F6"), IOStandard("LVCMOS33")),
         Subsignal("clkx_test2", Pins("G2"), IOStandard("LVCMOS33")),
-    )
+    ),
+
+
+    # MII Ethernet
+    ("eth_clocks", 0,
+        Subsignal("tx", Pins("N16"),Misc("SLEW=FAST")),
+        Subsignal("rx", Pins("T14")),
+        IOStandard("LVCMOS18"),
+    ),
+    ("eth", 0,
+        Subsignal("rst_n",   Pins("M13")),
+        Subsignal("mdio",    Pins("N14")),
+        Subsignal("mdc",     Pins("P14")),
+        Subsignal("rx_dv",   Pins("T16"), Misc("SLEW=FAST")),
+        Subsignal("rx_er",   Pins("T15")),
+        Subsignal("rx_data", Pins("U16 V17 V15 V16")),
+        Subsignal("tx_en",   Pins("R16")),
+        Subsignal("tx_data", Pins("R18 T18 U17 U18"), Misc("SLEW=FAST")),
+        #Subsignal("col",     Pins("D17")),
+        #Subsignal("crs",     Pins("G14")),
+        IOStandard("LVCMOS18"),
+    ),
+
+
+    '''
+    # PL_Gigabit_Ethernet
+    set_property SLEW FAST [get_ports ETH_TXC]
+    set_property SLEW FAST [get_ports ETH_TX_CTL]
+    set_property SLEW FAST [get_ports {ETH_TXD[0]}]
+    set_property SLEW FAST [get_ports {ETH_TXD[1]}]
+    set_property SLEW FAST [get_ports {ETH_TXD[2]}]
+    set_property SLEW FAST [get_ports {ETH_TXD[3]}]
+    set_property -dict {PACKAGE_PIN P14   IOSTANDARD LVCMOS18  } [get_ports {ETH_MDC}]
+    set_property -dict {PACKAGE_PIN U16   IOSTANDARD LVCMOS18  } [get_ports {ETH_RXD[0]}]
+    set_property -dict {PACKAGE_PIN V17   IOSTANDARD LVCMOS18  } [get_ports {ETH_RXD[1]}]
+    set_property -dict {PACKAGE_PIN V15   IOSTANDARD LVCMOS18  } [get_ports {ETH_RXD[2]}]
+    set_property -dict {PACKAGE_PIN V16   IOSTANDARD LVCMOS18  } [get_ports {ETH_RXD[3]}]
+    set_property -dict {PACKAGE_PIN T14   IOSTANDARD LVCMOS18  } [get_ports {ETH_RXC}]
+    set_property -dict {PACKAGE_PIN R18   IOSTANDARD LVCMOS18  } [get_ports {ETH_TXD[0]}]
+    set_property -dict {PACKAGE_PIN T18   IOSTANDARD LVCMOS18  } [get_ports {ETH_TXD[1]}]
+    set_property -dict {PACKAGE_PIN U17   IOSTANDARD LVCMOS18  } [get_ports {ETH_TXD[2]}]
+    set_property -dict {PACKAGE_PIN U18   IOSTANDARD LVCMOS18  } [get_ports {ETH_TXD[3]}]
+    set_property -dict {PACKAGE_PIN N16   IOSTANDARD LVCMOS18  } [get_ports {ETH_TXC}]
+    set_property -dict {PACKAGE_PIN N14   IOSTANDARD LVCMOS18  } [get_ports {ETH_MDIO}]
+    set_property -dict {PACKAGE_PIN T15   IOSTANDARD LVCMOS18  } [get_ports {ETH_INT_N}]
+    set_property -dict {PACKAGE_PIN M13   IOSTANDARD LVCMOS18  } [get_ports {ETH_RST_N}]
+    set_property -dict {PACKAGE_PIN R16   IOSTANDARD LVCMOS18  } [get_ports {ETH_RX_CTL}]
+    set_property -dict {PACKAGE_PIN T16   IOSTANDARD LVCMOS18  } [get_ports {ETH_TX_CTL}]
+    '''
 ]
 
 _connectors = []
@@ -140,6 +188,11 @@ class Platform(XilinxPlatform):
         #self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 15]") # LV
         self.add_platform_command("set_property INTERNAL_VREF 0.750 [get_iobanks 15]")  # 1.5V
         self.programmer = programmer
+
+        # hack to make it rout the the clock, bad chice from enclustra, or did I d something wrong?
+        #Phase 1.2 IO Placement/ Clock Placement/ Build Placer Device
+        #WARNING: [Place 30-574] Poor placement for routing between an IO pin and BUFG. This is normally an ERROR but the CLOCK_DEDICATED_ROUTE constraint is set to FALSE allowing your design to continue. The use of this override is highly discouraged as it may lead to very poor timing results. It is recommended that this error condition be corrected in the design.
+        #self.add_platform_command("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets eth_clocks_tx_IBUF]")
 
 
     def create_programmer(self):

@@ -29,7 +29,7 @@ from litex.soc.interconnect.csr import *
 from litedram.modules import NT5CC128M16
 from litedram.phy import s7ddrphy
 
-#from liteeth.phy.mii import LiteEthPHYMII
+from liteeth.phy.mii import LiteEthPHYMII
 
 # CRG ----------------------------------------------------------------------------------------------
 
@@ -190,6 +190,18 @@ class BaseSoC(SoCCore):
         self.add_jtagbone()
 
 
+        # Ethernet / Etherbone ---------------------------------------------------------------------
+        if with_ethernet or with_etherbone:
+            self.submodules.ethphy = LiteEthPHYMII(
+                clock_pads = self.platform.request("eth_clocks"),
+                pads       = self.platform.request("eth"))
+            self.add_csr("ethphy")
+            if with_ethernet:
+                self.add_ethernet(phy=self.ethphy)
+            if with_etherbone:
+                self.add_etherbone(phy=self.ethphy, ip_address=eth_ip)
+
+
 # Build --------------------------------------------------------------------------------------------
 
 def main():
@@ -198,10 +210,10 @@ def main():
     parser.add_argument("--build",            action="store_true",              help="Build bitstream")
     parser.add_argument("--load",             action="store_true",              help="Load bitstream")
     parser.add_argument("--sys-clk-freq",     default=100e6,                    help="System clock frequency (default: 50MHz)")
-    #ethopts = parser.add_mutually_exclusive_group()
-    #ethopts.add_argument("--with-ethernet",   action="store_true",              help="Enable Ethernet support")
-    #ethopts.add_argument("--with-etherbone",  action="store_true",              help="Enable Etherbone support")
-    #parser.add_argument("--eth-ip",           default="192.168.1.50", type=str, help="Ethernet/Etherbone IP address")
+    ethopts = parser.add_mutually_exclusive_group()
+    ethopts.add_argument("--with-ethernet",   action="store_true",              help="Enable Ethernet support")
+    ethopts.add_argument("--with-etherbone",  action="store_true",              help="Enable Etherbone support")
+    parser.add_argument("--eth-ip",           default="192.168.1.50", type=str, help="Ethernet/Etherbone IP address")
     sdopts = parser.add_mutually_exclusive_group()
     sdopts.add_argument("--with-spi-sdcard",  action="store_true",              help="Enable SPI-mode SDCard support")
     sdopts.add_argument("--with-sdcard",      action="store_true",              help="Enable SDCard support")
@@ -214,9 +226,9 @@ def main():
     soc = BaseSoC(
         toolchain      = args.toolchain,
         sys_clk_freq   = int(float(args.sys_clk_freq)),
-        #with_ethernet  = args.with_ethernet,
-        #with_etherbone = args.with_etherbone,
-        #eth_ip         = args.eth_ip,
+        with_ethernet  = args.with_ethernet,
+        with_etherbone = args.with_etherbone,
+        eth_ip         = args.eth_ip,
         ident_version  = args.no_ident_version,
         **soc_sdram_argdict(args)
     )
