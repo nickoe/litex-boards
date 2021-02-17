@@ -101,28 +101,23 @@ _io = [
         Subsignal("clkx_test", Pins("F6"), IOStandard("LVCMOS33")),
         Subsignal("clkx_test2", Pins("G2"), IOStandard("LVCMOS33")),
     ),
-
-
-    # MII Ethernet
+    # RGMII Ethernet
     ("eth_clocks", 0,
-        Subsignal("tx", Pins("N16"),Misc("SLEW=FAST")),
-        Subsignal("rx", Pins("T14")),
-        IOStandard("LVCMOS18"),
-    ),
+     Subsignal("tx", Pins("N16")),
+     Subsignal("rx", Pins("T14")),
+     IOStandard("LVCMOS18")
+     ),
     ("eth", 0,
-        Subsignal("rst_n",   Pins("M13")),
-        Subsignal("mdio",    Pins("N14")),
-        Subsignal("mdc",     Pins("P14")),
-        Subsignal("rx_dv",   Pins("T16"), Misc("SLEW=FAST")),
-        Subsignal("rx_er",   Pins("T15")),
-        Subsignal("rx_data", Pins("U16 V17 V15 V16")),
-        Subsignal("tx_en",   Pins("R16")),
-        Subsignal("tx_data", Pins("R18 T18 U17 U18"), Misc("SLEW=FAST")),
-        #Subsignal("col",     Pins("D17")),
-        #Subsignal("crs",     Pins("G14")),
-        IOStandard("LVCMOS18"),
-    ),
-
+     Subsignal("rst_n", Pins("M13"), IOStandard("LVCMOS18")),
+     Subsignal("int_n", Pins("T15")),
+     Subsignal("mdio", Pins("N14")),
+     Subsignal("mdc", Pins("P14")),
+     Subsignal("rx_ctl", Pins("R16")),
+     Subsignal("rx_data", Pins("U16 V17 V15 V16")),
+     Subsignal("tx_ctl", Pins("T16")),
+     Subsignal("tx_data", Pins("R18 T18 U17 U18")),
+     IOStandard("LVCMOS18")
+     ),
 
     '''
     # PL_Gigabit_Ethernet

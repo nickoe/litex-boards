@@ -29,7 +29,8 @@ from litex.soc.interconnect.csr import *
 from litedram.modules import NT5CC128M16
 from litedram.phy import s7ddrphy
 
-from liteeth.phy.mii import LiteEthPHYMII
+from liteeth.phy.s7rgmii import LiteEthPHYRGMII
+
 
 # CRG ----------------------------------------------------------------------------------------------
 
@@ -192,7 +193,7 @@ class BaseSoC(SoCCore):
 
         # Ethernet / Etherbone ---------------------------------------------------------------------
         if with_ethernet or with_etherbone:
-            self.submodules.ethphy = LiteEthPHYMII(
+            self.submodules.ethphy = LiteEthPHYRGMII(
                 clock_pads = self.platform.request("eth_clocks"),
                 pads       = self.platform.request("eth"))
             self.add_csr("ethphy")
@@ -200,6 +201,7 @@ class BaseSoC(SoCCore):
                 self.add_ethernet(phy=self.ethphy)
             if with_etherbone:
                 self.add_etherbone(phy=self.ethphy, ip_address=eth_ip)
+
 
 
 # Build --------------------------------------------------------------------------------------------
