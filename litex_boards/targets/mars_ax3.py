@@ -25,8 +25,8 @@ from litex.soc.cores.spi_flash import SpiFlash
 
 from litex.soc.interconnect.csr import *
 
-
-from litedram.modules import NT5CC128M16
+#from litedram.modules import NT5CC128M16
+from litedram.modules import DDR3Module, _TechnologyTimings, _SpeedgradeTimings
 from litedram.phy import s7ddrphy
 
 from liteeth.phy.s7rgmii import LiteEthPHYRGMII
@@ -84,6 +84,29 @@ class _MyDAC(Module, AutoCSR):
 
 # BaseSoC ------------------------------------------------------------------------------------------
 
+# litedram struct, used here as it is not merged and tested for upstream ---------------------------
+# NICK DEBUG  NT5CC128M16IP-DII
+class NT5CC128M16(DDR3Module):
+    memtype = "DDR3"
+    # geometry
+    nbanks = 8
+    nrows  = 16384
+    ncols  = 1024
+    # timings
+    technology_timings = _TechnologyTimings(tREFI=64e6/8192, tWTR=(4, 7.5), tCCD=(4, None), tRRD=(4, 10), tZQCS=(64, 80))
+    speedgrade_timings = {
+        "800" : _SpeedgradeTimings(tRP=15,     tRCD=15,     tWR=15, tRFC=(None, 260), tFAW=(None, 40), tRAS=37.5),
+        "1066": _SpeedgradeTimings(tRP=15,     tRCD=15,     tWR=15, tRFC=(None, 260), tFAW=(None, 40), tRAS=37.5),
+        "1333": _SpeedgradeTimings(tRP=13.125, tRCD=13.125, tWR=15, tRFC=(None, 260), tFAW=(None, 30), tRAS=36),
+        "1600": _SpeedgradeTimings(tRP=13.125, tRCD=13.125, tWR=15, tRFC=(None, 260), tFAW=(None, 30), tRAS=35),
+        "1866": _SpeedgradeTimings(tRP=13.125, tRCD=13.125, tWR=15, tRFC=(None, 260), tFAW=(None, 27), tRAS=34),
+    }
+    speedgrade_timings["default"] = speedgrade_timings["800"]
+    #            <Parameters twtr="7.5" trrd="7.5" trefi="7.8" tfaw="40" trtp="7.5" tcke="5.625" trfc="160" trp="13.75" tras="35" trcd="13.75" />
+
+# NICK DEBUG
+
+# BaseSoC ------------------------------------------------------------------------------------------
 class BaseSoC(SoCCore):
     mem_map = {**SoCCore.mem_map, **{"spiflash": 0x20000000}}
     def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(100e6), with_ethernet=False, with_etherbone=False, eth_ip="192.168.1.50", ident_version=True, **kwargs):
