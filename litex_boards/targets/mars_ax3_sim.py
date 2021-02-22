@@ -28,10 +28,15 @@ from litedram.frontend.dma import LiteDRAMDMAWriter, LiteDRAMDMAReader
 from litedram.common import LiteDRAMNativePort
 from litedram.frontend.axi import LiteDRAMAXIPort
 
+
 from litex.build.generic_platform import *
 from litex.build.sim import SimPlatform
 from litex.build.sim.config import SimConfig
 
+from litedram import modules as litedram_modules
+from litedram.phy.model import SDRAMPHYModel
+from litex.tools.litex_sim import sdram_module_nphases, get_sdram_phy_settings
+from litedram.core.controller import ControllerSettings
 
 
 
@@ -204,6 +209,12 @@ _io = [
     ("user_led", 1, Pins(2)),
     ("user_led", 2, Pins(3)),
     ("user_led", 3, Pins(4)),
+    ("spisdcard", 0,
+        Subsignal("clk", Pins(1)),
+        Subsignal("mosi", Pins(1), Misc("PULLUP True")),
+        Subsignal("cs_n", Pins(1), Misc("PULLUP True")),
+        Subsignal("miso", Pins(1), Misc("PULLUP True")),
+     ),
 ]
 
 
@@ -221,7 +232,12 @@ class BaseSoC(SoCCore):
         "timer0": 3,
     }}
     mem_map = {**SoCCore.mem_map, **{"spiflash": 0x20000000}}
-    def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(100e6), ident_version=True, **kwargs):
+    def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(100e6), ident_version=True,
+                 init_memories=False,
+                 sdram_module="MT48LC16M16",
+                 sdram_data_width=32,
+                 sdram_verbosity=0,
+                 **kwargs):
         platform = Platform()
 
         # Increasing the integration rom size as we would like to enable SPI mode SDcard in bios
@@ -233,12 +249,17 @@ class BaseSoC(SoCCore):
             ident_version  = ident_version,
             #integrated_rom_size      = 0x10000,
             #uart_name = "sim",
-            with_uart = False,
             **kwargs)
         self.add_config("DISABLE_DELAYS")
 
+        ram_init = []
+        if init_memories:
+            ram_init = get_mem_data({
+                "./build/sim/software/bios/bios.bin": "0x00000000",
+            }, "little")
+
         # CRG --------------------------------------------------------------------------------------
-        self.submodules.crg = _CRG(platform, sys_clk_freq)
+        self.submodules.crg = CRG(platform.request("sys_clk"))
 
         # SDRAM ------------------------------------------------------------------------------------
         sdram_clk_freq   = int(100e6) # FIXME: use 100MHz timings
@@ -271,15 +292,10 @@ class BaseSoC(SoCCore):
                 size=0x100)
 
         # Memory mapped SPI Flash ------------------------------------------------------------------
-
+        '''
         spiflash_pads = platform.request(spiflash)
         spiflash_pads.clk = Signal()
-        '''
-        self.specials += Instance(
-            "STARTUPE2",
-            i_CLK=0, i_GSR=0, i_GTS=0, i_KEYCLEARB=0, i_PACK=0,
-            i_USRCCLKO=spiflash_pads.clk, i_USRCCLKTS=0, i_USRDONEO=1, i_USRDONETS=1)
-        '''
+
         spiflash_dummy = {
             "spiflash_1x": 8,
             "spiflash_4x": 11,
@@ -301,7 +317,7 @@ class BaseSoC(SoCCore):
             "spiflash",
             self.mem_map["spiflash"],
             platform.spiflash_total_size)
-
+        '''
         # Mars AX3 specific stuff
         #self.comb += platform.request("ddr3_vsel").eq(0) # only for LV RAM operation
 
@@ -347,11 +363,10 @@ def main():
     sdopts.add_argument("--with-sdcard",      action="store_true",              help="Enable SDCard support")
     parser.add_argument("--no-ident-version", action="store_false",             help="Disable build time output")
     builder_args(parser)
-    #soc_sdram_args(parser)
     args = parser.parse_args()
 
     sim_config = SimConfig(default_clk="sys_clk")
-    sim_config.add_module("serial2console", "serialsim")
+    sim_config.add_module("serial2console", "serial")
 
     soc = BaseSoC(
         toolchain=args.toolchain,
