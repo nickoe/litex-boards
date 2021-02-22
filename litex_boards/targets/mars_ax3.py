@@ -32,6 +32,10 @@ from litedram.phy import s7ddrphy
 from liteeth.phy.s7rgmii import LiteEthPHYRGMII
 
 
+from litex.build.generic_platform import *
+from litex.build.sim import SimPlatform
+from litex.build.sim.config import SimConfig
+
 # CRG ----------------------------------------------------------------------------------------------
 
 class _CRG(Module):
@@ -235,6 +239,11 @@ def main():
     parser.add_argument("--build",            action="store_true",              help="Build bitstream")
     parser.add_argument("--load",             action="store_true",              help="Load bitstream")
     parser.add_argument("--sys-clk-freq",     default=100e6,                    help="System clock frequency (default: 50MHz)")
+    parser.add_argument("--sim",              action="store_true",              help="My attempt to enable simulation")
+    parser.add_argument("--trace",                action="store_true",     help="enable VCD tracing")
+    parser.add_argument("--trace-start",          default=0,               help="cycle to start VCD tracing")
+    parser.add_argument("--trace-end",            default=-1,              help="cycle to end VCD tracing")
+    parser.add_argument("--opt-level",            default="O3",            help="compilation optimization level")
     ethopts = parser.add_mutually_exclusive_group()
     ethopts.add_argument("--with-ethernet",   action="store_true",              help="Enable Ethernet support")
     ethopts.add_argument("--with-etherbone",  action="store_true",              help="Enable Etherbone support")
@@ -262,13 +271,40 @@ def main():
         soc.add_spi_sdcard()
     if args.with_sdcard:
         soc.add_sdcard()
-    builder = Builder(soc, **builder_argdict(args))
-    builder_kwargs = vivado_build_argdict(args) if args.toolchain == "vivado" else {}
-    builder.build(**builder_kwargs, run=args.build)
 
-    if args.load:
-        prog = soc.platform.create_programmer()
-        prog.load_bitstream(os.path.join(builder.gateware_dir, soc.build_name + ".bit"))
+
+    if not args.sim:
+        print("NICK doing REAL SoC stuff")
+        # Real SoC stuff -------------------------------------------------------------------------------
+        builder = Builder(soc, **builder_argdict(args))
+        builder_kwargs = vivado_build_argdict(args) if args.toolchain == "vivado" else {}
+        builder.build(**builder_kwargs, run=args.build)
+
+        if args.load:
+            prog = soc.platform.create_programmer()
+            prog.load_bitstream(os.path.join(builder.gateware_dir, soc.build_name + ".bit"))
+
+    else:
+        print("NICK doing SIMULATION SoC stuff")
+        # Simulation stuff -----------------------------------------------------------------------------
+        sim_config = SimConfig(default_clk="sys_clk")
+        sim_config.add_module("serial2console", "serial")
+        if args.with_ethernet:
+            sim_config.add_module("ethernet", "eth", args={"interface": "tap0", "ip": args.remote_ip})
+
+
+        board_name = "sim"
+        build_dir  = os.path.join("build", board_name)
+        builder = Builder(soc, output_dir=build_dir,
+            compile_gateware = args.build,
+            csr_json         = os.path.join(build_dir, "csr.json"))
+        builder.build(sim_config=sim_config,
+            run         = args.build,
+            opt_level   = args.opt_level,
+            trace       = args.trace,
+            trace_start = int(args.trace_start),
+            trace_end   = int(args.trace_end))
+
 
 if __name__ == "__main__":
     main()
