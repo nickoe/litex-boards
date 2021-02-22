@@ -173,21 +173,22 @@ class Platform(XilinxPlatform):
     spiflash_sector_size = 256*1024
 
     def __init__(self, toolchain="vivado", programmer="openocd"):
-        XilinxPlatform.__init__(self, "xc7a35t-csg324-1", _io, _connectors, toolchain=toolchain)
-        self.toolchain.bitstream_commands = \
-            ["set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]"]
-        self.toolchain.additional_commands = \
-            ["write_cfgmem -force -format bin -interface spix4 -size 16 "
-             "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
-        #self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 34]")
-        #self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 15]") # LV
-        self.add_platform_command("set_property INTERNAL_VREF 0.750 [get_iobanks 15]")  # 1.5V
-        self.programmer = programmer
+        if toolchain == "vivado":
+            XilinxPlatform.__init__(self, "xc7a35t-csg324-1", _io, _connectors, toolchain=toolchain)
+            self.toolchain.bitstream_commands = \
+                ["set_property BITSTREAM.CONFIG.SPI_BUSWIDTH 4 [current_design]"]
+            self.toolchain.additional_commands = \
+                ["write_cfgmem -force -format bin -interface spix4 -size 16 "
+                 "-loadbit \"up 0x0 {build_name}.bit\" -file {build_name}.bin"]
+            #self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 34]")
+            #self.add_platform_command("set_property INTERNAL_VREF 0.675 [get_iobanks 15]") # LV
+            self.add_platform_command("set_property INTERNAL_VREF 0.750 [get_iobanks 15]")  # 1.5V
+            self.programmer = programmer
 
-        # hack to make it rout the the clock, bad chice from enclustra, or did I d something wrong?
-        #Phase 1.2 IO Placement/ Clock Placement/ Build Placer Device
-        #WARNING: [Place 30-574] Poor placement for routing between an IO pin and BUFG. This is normally an ERROR but the CLOCK_DEDICATED_ROUTE constraint is set to FALSE allowing your design to continue. The use of this override is highly discouraged as it may lead to very poor timing results. It is recommended that this error condition be corrected in the design.
-        #self.add_platform_command("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets eth_clocks_tx_IBUF]")
+            # hack to make it rout the the clock, bad chice from enclustra, or did I d something wrong?
+            #Phase 1.2 IO Placement/ Clock Placement/ Build Placer Device
+            #WARNING: [Place 30-574] Poor placement for routing between an IO pin and BUFG. This is normally an ERROR but the CLOCK_DEDICATED_ROUTE constraint is set to FALSE allowing your design to continue. The use of this override is highly discouraged as it may lead to very poor timing results. It is recommended that this error condition be corrected in the design.
+            #self.add_platform_command("set_property CLOCK_DEDICATED_ROUTE FALSE [get_nets eth_clocks_tx_IBUF]")
 
 
     def create_programmer(self):

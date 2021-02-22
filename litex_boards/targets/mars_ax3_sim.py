@@ -229,7 +229,6 @@ class BaseSoC(SoCCore):
     csr_map = {**SoCCore.csr_map, **{
         "ctrl":   0,
         "uart":   2,
-        "timer0": 3,
     }}
     mem_map = {**SoCCore.mem_map, **{"spiflash": 0x20000000}}
     def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(100e6), ident_version=True,
