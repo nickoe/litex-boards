@@ -286,22 +286,22 @@ class SimSoC(SoCCore):
                 # IBus (could also just added as self.cpu.ibus)
                 self.cpu.ibus.stb,
                 self.cpu.ibus.cyc,
-                self.cpu.ibus.adr,
-                self.cpu.ibus.we,
-                self.cpu.ibus.ack,
-                self.cpu.ibus.sel,
-                self.cpu.ibus.dat_w,
-                self.cpu.ibus.dat_r,
-                # DBus (could also just added as self.cpu.dbus)
-                self.cpu.dbus.stb,
-                self.cpu.dbus.cyc,
-                self.cpu.dbus.adr,
-                self.cpu.dbus.we,
-                self.cpu.dbus.ack,
-                self.cpu.dbus.sel,
-                self.cpu.dbus.dat_w,
-                self.cpu.dbus.dat_r,
-                self.leds.pads,
+                # self.cpu.ibus.adr,
+                # self.cpu.ibus.we,
+                # self.cpu.ibus.ack,
+                # self.cpu.ibus.sel,
+                # self.cpu.ibus.dat_w,
+                # self.cpu.ibus.dat_r,
+                # # DBus (could also just added as self.cpu.dbus)
+                # self.cpu.dbus.stb,
+                # self.cpu.dbus.cyc,
+                # self.cpu.dbus.adr,
+                # self.cpu.dbus.we,
+                # self.cpu.dbus.ack,
+                # self.cpu.dbus.sel,
+                # self.cpu.dbus.dat_w,
+                # self.cpu.dbus.dat_r,
+                self.leds,
             ]
             self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals,
                 depth        = 512,
@@ -423,6 +423,18 @@ def main():
     trace_start = int(float(args.trace_start))
     trace_end = int(float(args.trace_end))
 
+
+    '''
+    ram_init = []
+    ram_init = get_mem_data({
+        #"./build/sim/software/bios/bios.bin": "0x00000000",
+        #"test_data.cs16": "0x41000000",
+        "demo.bin": "0x40000000",
+    }, cpu.endianness)
+    '''
+
+
+
     # SoC ------------------------------------------------------------------------------------------
     soc = SimSoC(
         with_sdram     = args.with_sdram,
@@ -433,6 +445,7 @@ def main():
         sim_debug      = args.sim_debug,
         trace_reset_on = trace_start > 0 or trace_end > 0,
         sdram_init     = [] if args.sdram_init is None else get_mem_data(args.sdram_init, cpu.endianness),
+        #sdram_init     = [] if args.sdram_init is None else ram_init,
         **soc_kwargs)
     if args.ram_init is not None or args.sdram_init is not None:
         soc.add_constant("ROM_BOOT_ADDRESS", 0x40000000)
