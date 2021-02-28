@@ -63,9 +63,9 @@ _io = [
         Subsignal("sink_data",    Pins(8)),
     ),
     ("user_led", 0, Pins(1)),
-    ("user_led", 1, Pins(2)),
-    ("user_led", 2, Pins(3)),
-    ("user_led", 3, Pins(4)),
+    ("user_led", 1, Pins(1)),
+    ("user_led", 2, Pins(1)),
+    ("user_led", 3, Pins(1)),
 ]
 
 # Platform -----------------------------------------------------------------------------------------
@@ -301,7 +301,8 @@ class SimSoC(SoCCore):
                 # self.cpu.dbus.sel,
                 # self.cpu.dbus.dat_w,
                 # self.cpu.dbus.dat_r,
-                self.leds,
+                self.leds.pads,
+                #self.user_leds,
             ]
             self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals,
                 depth        = 512,
