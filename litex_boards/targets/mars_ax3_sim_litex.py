@@ -301,7 +301,10 @@ class SimSoC(SoCCore):
                 # self.cpu.dbus.sel,
                 # self.cpu.dbus.dat_w,
                 # self.cpu.dbus.dat_r,
-                self.leds.pads,
+                platform.lookup_request("user_led", 0),
+                platform.lookup_request("user_led", 1),
+                platform.lookup_request("user_led", 2),
+                platform.lookup_request("user_led", 3),
                 #self.user_leds,
             ]
             self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals,
