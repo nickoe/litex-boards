@@ -364,6 +364,16 @@ class SimSoC(SoCCore):
             sys_clk_freq = sys_clk_freq)
         self.add_csr("leds")
 
+        # Attempt to create DMA to AXI Stream ------------------------------------------------------
+        '''
+        dac_plat = platform.request("dac")
+        self.submodules.dac = _MyDMA(
+            data_a=dac_plat.data_a,
+            data_b=dac_plat.data_b,
+            cw=dac_plat.cw,
+            sys_clk_freq=sys_clk_freq)
+        self.add_csr("dac")
+        '''
 
         # Analyzer ---------------------------------------------------------------------------------
         if with_analyzer:
