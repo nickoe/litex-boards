@@ -66,6 +66,15 @@ _io = [
     ("user_led", 1, Pins(1)),
     ("user_led", 2, Pins(1)),
     ("user_led", 3, Pins(1)),
+    ("dac", 0,
+     Subsignal("data_a", Pins("R1 T1 U1 V1 U4 U3 U2 V2 V7 V6"), IOStandard("LVCMOS33")),
+     Subsignal("data_b", Pins("N5 P5 L1 M1 N2 N1 P4 P3 R6 R5"), IOStandard("LVCMOS33")),
+     Subsignal("cw", Pins("L3"), IOStandard("LVCMOS33")),
+     Subsignal("clkx_p", Pins("K5"), IOStandard("LVCMOS33")),
+     Subsignal("clkx_n", Pins("L4"), IOStandard("LVCMOS33")),
+     Subsignal("clkx_test", Pins("F6"), IOStandard("LVCMOS33")),
+     Subsignal("clkx_test2", Pins("G2"), IOStandard("LVCMOS33")),
+     ),
 ]
 
 # Platform -----------------------------------------------------------------------------------------
@@ -142,6 +151,82 @@ def get_sdram_phy_settings(memtype, data_width, clk_freq):
         dfi_databits = data_width if memtype == "SDR" else 2*data_width,
         **sdram_phy_settings,
     )
+
+class _MyDMA(Module, AutoCSR):
+    def __init__(self, port, sys_clk_freq, period=1e0):
+        ashift, awidth = get_ashift_awidth(port)
+        self.start       = Signal()
+        self.done        = Signal()
+        self.base        = Signal(awidth)
+        self.end         = Signal(awidth)
+        self.length      = Signal(awidth)
+        self.ticks = Signal(64)
+
+        # DMA --------------------------------------------------------------------------------------
+        dma = LiteDRAMDMAReader(port)
+        self.submodules += dma
+
+        # Address FSM ------------------------------------------------------------------------------
+        cmd_counter = Signal(port.address_width, reset_less=True)
+
+        #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
+        #TODO use a fsm, similar to _LiteDRAMBISTChecker or _LiteDRAMBISTGenerator to excercise the address and map it to the registers wired to the DAC?
+        # I mean (dac_plat.data_a and dac_plat.data_b) instead of using the _MyDAC module
+        #TODO Secondly this should output in an AXIStreamInterface
+
+        self.data_iq_addr = CSRStorage(32, description="Address of our IQ samples in memory", write_from_dev=True)
+        self.data_iq = CSRStorage(32, fields=[
+                                   CSRField("i", description="Data I", size=10),
+                                   CSRField("q", description="Data Q", size=10),
+                               ], description="IQ sample",)
+        #data_a.eq(self.data_iq_storage.storage[0:10])
+        #data_b.eq(self.data_iq_storage.storage[10:20])
+
+        if isinstance(port, LiteDRAMNativePort): # addressing in dwords
+            dma_sink_addr = dma.sink.address
+        else:
+            raise NotImplementedError
+
+        dma_sink_addr
+
+        # Data / Address FSM -----------------------------------------------------------------------
+        fsm = FSM(reset_state="IDLE")
+        self.submodules += fsm
+        fsm.act("IDLE",
+            If(self.start,
+                NextValue(self.data_iq_addr, 0x41000000),
+                NextState("RUN")
+            ),
+            NextValue(self.ticks, 0)
+        )
+        fsm.act("WAIT",
+            If(self.run_cascade_in,
+                NextState("RUN")
+            )
+        )
+        fsm.act("RUN",
+            dma.sink.valid.eq(1),
+            If(dma.sink.ready,
+                NextValue(self.data_iq_addr, self.data_iq_addr + 1),
+                If(self.data_iq_addr == (0x41000000 + 1024),
+                    NextState("DONE")
+                ).Elif(~self.run_cascade_in,
+                    NextState("WAIT")
+                )
+            ),
+            NextValue(self.ticks, self.ticks + 1)
+        )
+        fsm.act("DONE",
+            self.run_cascade_out.eq(1),
+            self.done.eq(1)
+        )
+
+        self.comb += [
+            dma_sink_addr.eq(addr_port.dat_r),
+            dma.sink.data.eq(data_port.dat_r),
+        ]
+
+
 
 # Simulation SoC -----------------------------------------------------------------------------------
 
@@ -322,6 +407,20 @@ class SimSoC(SoCCore):
             platform.add_debug(self, reset=1 if trace_reset_on else 0)
         else:
             self.comb += platform.trace.eq(1)
+
+        cycles_end = 2000000
+        cycles = Signal(32)
+        self.sync += cycles.eq(cycles + 1)
+        #self.sync += If(cycles == cycles_end, Finish())
+
+
+        self.sync += If(cycles == cycles_end,
+            Display("-"*80),
+            Display("Cycles: %d", cycles),
+            #Display("Errors: %d", errors),
+            Display("-"*80),
+            Finish(),
+        )
 
 
 # Build --------------------------------------------------------------------------------------------
