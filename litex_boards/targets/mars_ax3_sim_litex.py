@@ -251,6 +251,7 @@ class SimSoC(SoCCore):
         with_sdcard           = False,
         sim_debug             = False,
         trace_reset_on        = False,
+        trace_hack            = False,
         **kwargs):
         platform     = Platform()
         sys_clk_freq = int(1e6)
@@ -418,19 +419,21 @@ class SimSoC(SoCCore):
         else:
             self.comb += platform.trace.eq(1)
 
-        cycles_end = 2000000
-        cycles = Signal(32)
-        self.sync += cycles.eq(cycles + 1)
-        #self.sync += If(cycles == cycles_end, Finish())
 
+        if trace_hack:
+            #cycles_end = 2000000
+            cycles_end = 20000
+            cycles = Signal(32)
+            self.sync += cycles.eq(cycles + 1)
+            #self.sync += If(cycles == cycles_end, Finish())
 
-        self.sync += If(cycles == cycles_end,
-            Display("-"*80),
-            Display("Cycles: %d", cycles),
-            #Display("Errors: %d", errors),
-            Display("-"*80),
-            Finish(),
-        )
+            self.sync += If(cycles == cycles_end,
+                Display("-"*80),
+                Display("Cycles: %d", cycles),
+                #Display("Errors: %d", errors),
+                Display("-"*80),
+                Finish(),
+            )
 
 
 # Build --------------------------------------------------------------------------------------------
@@ -557,6 +560,7 @@ def main():
         with_sdcard    = args.with_sdcard,
         sim_debug      = args.sim_debug,
         trace_reset_on = trace_start > 0 or trace_end > 0,
+        trace_hack     = args.trace,
         sdram_init     = [] if args.sdram_init is None else get_mem_data(args.sdram_init, cpu.endianness),
         #sdram_init     = [] if args.sdram_init is None else ram_init,
         **soc_kwargs)
