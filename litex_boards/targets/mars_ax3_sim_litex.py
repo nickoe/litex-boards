@@ -185,7 +185,7 @@ class _MyDMA(Module, AutoCSR):
         self.ticks = Signal(64)
 
         # DMA --------------------------------------------------------------------------------------
-        dma = LiteDRAMDMAReader(port, fifo_depth=32)
+        dma = LiteDRAMDMAReader(port)
         self.submodules += dma
 
         # Address FSM ------------------------------------------------------------------------------
@@ -239,6 +239,7 @@ class _MyDMA(Module, AutoCSR):
         )
         fsm.act("RUN",
             dma.sink.valid.eq(1),
+            dma.source.ready.eq(1),
             If(dma.sink.ready,
                 NextValue(self.data_iq_addr, self.data_iq_addr + 1),
                 If(self.data_iq_addr == (0x41000000 + 1024),
@@ -256,7 +257,7 @@ class _MyDMA(Module, AutoCSR):
 
         self.comb += [
             dma_sink_addr.eq(self.data_iq_addr),
-            dma.source.data.eq(self.output_sig),
+            self.output_sig.eq(dma.source.data)
         ]
 
 
