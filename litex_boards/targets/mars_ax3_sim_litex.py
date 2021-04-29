@@ -20,6 +20,12 @@ from litedram import modules as litedram_modules
 from litedram.modules import parse_spd_hexdump
 from litedram.common import *
 from litedram.phy.model import SDRAMPHYModel
+from litedram.frontend.bist import get_ashift_awidth
+
+from litex.soc.cores.dma import WishboneDMAWriter, WishboneDMAReader
+from litedram.frontend.dma import LiteDRAMDMAWriter, LiteDRAMDMAReader
+from litedram.common import LiteDRAMNativePort
+from litedram.frontend.axi import LiteDRAMAXIPort
 
 from liteeth.phy.model import LiteEthPHYModel
 from liteeth.mac import LiteEthMAC
@@ -152,10 +158,26 @@ def get_sdram_phy_settings(memtype, data_width, clk_freq):
         **sdram_phy_settings,
     )
 
+class _MyDAC(Module, AutoCSR):
+    def __init__(self, data_a, data_b, cw, sys_clk_freq, period=1e0):
+        self.cw = CSRStorage(1, description="DAC code word register")
+        self.data_a_storage = CSRStorage(10, fields=[
+                                   CSRField("a", description="Data A", size=10),
+                               ], description="DAC data register",)
+        self.data_b_storage = CSRStorage(10, fields=[
+                                   CSRField("b", description="Data B", size=10),
+                               ], description="DAC data register",)
+        self.comb += [
+            data_a.eq(self.data_a_storage.storage[0:10]),
+            data_b.eq(self.data_b_storage.storage[0:10]),
+            cw.eq(self.cw.storage)
+        ]
+
+
 class _MyDMA(Module, AutoCSR):
     def __init__(self, port, sys_clk_freq, period=1e0):
         ashift, awidth = get_ashift_awidth(port)
-        self.start       = Signal()
+        self.start       = Signal(reset=1)
         self.done        = Signal()
         self.base        = Signal(awidth)
         self.end         = Signal(awidth)
@@ -163,7 +185,7 @@ class _MyDMA(Module, AutoCSR):
         self.ticks = Signal(64)
 
         # DMA --------------------------------------------------------------------------------------
-        dma = LiteDRAMDMAReader(port)
+        dma = LiteDRAMDMAReader(port, fifo_depth=32)
         self.submodules += dma
 
         # Address FSM ------------------------------------------------------------------------------
@@ -174,20 +196,31 @@ class _MyDMA(Module, AutoCSR):
         # I mean (dac_plat.data_a and dac_plat.data_b) instead of using the _MyDAC module
         #TODO Secondly this should output in an AXIStreamInterface
 
-        self.data_iq_addr = CSRStorage(32, description="Address of our IQ samples in memory", write_from_dev=True)
+        #self.data_iq_addr = CSRStorage(32, description="Address of our IQ samples in memory", write_from_dev=True)
+        self.data_iq_addr = Signal(32)
         self.data_iq = CSRStorage(32, fields=[
                                    CSRField("i", description="Data I", size=10),
                                    CSRField("q", description="Data Q", size=10),
                                ], description="IQ sample",)
         #data_a.eq(self.data_iq_storage.storage[0:10])
         #data_b.eq(self.data_iq_storage.storage[10:20])
+        self.output_sig = Signal(8)
+
+        #[07:59:40] <_florent_> nickoe: LiteDRAMDMAReader has two endpoints: a sink to provide your read request and a source that will return the data
+        #[08:00:20] <_florent_> so you can just set sink.valid.eq(1), sink.address.eq(the_address_you_want_to_read)
+        #[08:00:31] <_florent_> then wait sink.ready to be 1
+        #[08:00:57] <_florent_> and data will be returned on source.data when source.valid is 1
+
 
         if isinstance(port, LiteDRAMNativePort): # addressing in dwords
             dma_sink_addr = dma.sink.address
         else:
             raise NotImplementedError
 
-        dma_sink_addr
+
+        self.run_cascade_in  = Signal(reset=1)
+        self.run_cascade_out = Signal()
+
 
         # Data / Address FSM -----------------------------------------------------------------------
         fsm = FSM(reset_state="IDLE")
@@ -222,8 +255,8 @@ class _MyDMA(Module, AutoCSR):
         )
 
         self.comb += [
-            dma_sink_addr.eq(addr_port.dat_r),
-            dma.sink.data.eq(data_port.dat_r),
+            dma_sink_addr.eq(self.data_iq_addr),
+            dma.source.data.eq(self.output_sig),
         ]
 
 
@@ -366,22 +399,65 @@ class SimSoC(SoCCore):
         self.add_csr("leds")
 
         # Attempt to create DMA to AXI Stream ------------------------------------------------------
-        '''
+        # Just connecting it directly to the DAC pins, 2 x 10 bit
+        # RAM ->  _MyDMA -> AXI Stream -> DAC pins
+        # LiteDRAMDMAReader -> AXIStreamInterface -> dac_plat?
+
         dac_plat = platform.request("dac")
-        self.submodules.dac = _MyDMA(
+        '''
+        self.submodules.dac = _MyDAC(
             data_a=dac_plat.data_a,
             data_b=dac_plat.data_b,
             cw=dac_plat.cw,
             sys_clk_freq=sys_clk_freq)
-        self.add_csr("dac")
         '''
+        self.add_csr("dac")
+
+
+        # Create our platform (fpga interface)
+        platform.add_source("blink.v")
+        # Create our module (fpga description)
+        module = Module()
+        module.specials += Instance("blink",
+                                    i_clk=ClockSignal(),
+                                    i_rst=ResetSignal(),
+                                    o_led=None
+                                    )
+        self.submodules.blink = module
+
+        # Create our platform (fpga interface)
+        platform.add_source("dac.v")
+        # Create our module (fpga description)
+        dac_vmodule = Module()
+
+
+        # TODO connect up the i_t<somthing> signals to the AXI stream
+        module.specials += Instance("dac",
+                                    i_i_clk=ClockSignal(),
+                                    i_i_reset=ResetSignal(),
+                                    i_i_tdata=None,
+                                    i_i_tvalid=None,
+                                    o_o_tready=None,
+                                    o_o_sig_a=dac_plat.data_a,
+                                    o_o_sig_b=dac_plat.data_b,
+                                    o_o_ncw=dac_plat.cw
+                                    )
+        self.submodules.dac_module = dac_vmodule
+
+
+        self.submodules.mydma = _MyDMA(self.sdram.crossbar.get_port(mode="read",  data_width=8),
+                                       sys_clk_freq)
+        self.add_csr("mydma")
+
+
+
 
         # Analyzer ---------------------------------------------------------------------------------
         if with_analyzer:
             analyzer_signals = [
                 # IBus (could also just added as self.cpu.ibus)
-                self.cpu.ibus.stb,
-                self.cpu.ibus.cyc,
+                #self.cpu.ibus.stb,
+                #self.cpu.ibus.cyc,
                 # self.cpu.ibus.adr,
                 # self.cpu.ibus.we,
                 # self.cpu.ibus.ack,
@@ -401,6 +477,8 @@ class SimSoC(SoCCore):
                 platform.lookup_request("user_led", 1),
                 platform.lookup_request("user_led", 2),
                 platform.lookup_request("user_led", 3),
+                #self.dac,
+                #self.sdrphy,
                 #self.user_leds,
             ]
             self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals,
