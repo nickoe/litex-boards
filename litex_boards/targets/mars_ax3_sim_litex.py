@@ -436,24 +436,7 @@ class SimSoC(SoCCore):
                                     )
         self.submodules.blink = module
 
-        # Create our platform (fpga interface)
-        platform.add_source("dac.v")
-        # Create our module (fpga description)
-        dac_vmodule = Module()
 
-
-        # TODO connect up the i_t<somthing> signals to the AXI stream
-        module.specials += Instance("dac",
-                                    i_i_clk=ClockSignal(),
-                                    i_i_reset=ResetSignal(),
-                                    i_i_tdata=None,
-                                    i_i_tvalid=None,
-                                    o_o_tready=None,
-                                    o_o_sig_a=dac_plat.data_a,
-                                    o_o_sig_b=dac_plat.data_b,
-                                    o_o_ncw=dac_plat.cw
-                                    )
-        self.submodules.dac_module = dac_vmodule
 
 
 
@@ -483,6 +466,26 @@ class SimSoC(SoCCore):
             self.dac_sig_ncw.eq(medma.dma.source.valid)
         ]
 
+
+
+        # Create our platform (fpga interface)
+        platform.add_source("dac.v")
+        # Create our module (fpga description)
+        dac_vmodule = Module()
+
+
+        # TODO connect up the i_t<somthing> signals to the AXI stream
+        module.specials += Instance("dac",
+                                    i_i_clk=ClockSignal(),
+                                    i_i_reset=ResetSignal(),
+                                    i_i_tdata=Cat(medma.dma.source.data[0:10], medma.dma.source.data[16:26] ),
+                                    i_i_tvalid=medma.dma.source.valid,
+                                    o_o_tready=None,
+                                    o_o_sig_a=dac_plat.data_a,
+                                    o_o_sig_b=dac_plat.data_b,
+                                    o_o_ncw=dac_plat.cw
+                                    )
+        self.submodules.dac_module = dac_vmodule
 
 
         # Analyzer ---------------------------------------------------------------------------------
