@@ -197,7 +197,7 @@ class _MyDMA(Module, AutoCSR):
 
 
         # DMA --------------------------------------------------------------------------------------
-        self.dma = dma = LiteDRAMDMAReader(port, fifo_buffered=True)
+        self.dma = dma = LiteDRAMDMAReader(port, fifo_buffered=False)
         self.submodules += dma
 
         # Address FSM ------------------------------------------------------------------------------
@@ -216,7 +216,7 @@ class _MyDMA(Module, AutoCSR):
                                ], description="IQ sample",)
         #data_a.eq(self.data_iq_storage.storage[0:10])
         #data_b.eq(self.data_iq_storage.storage[10:20])
-        self.output_sig = Signal(8)
+        self.output_sig = Signal(dma.port.data_width)
 
         #[07:59:40] <_florent_> nickoe: LiteDRAMDMAReader has two endpoints: a sink to provide your read request and a source that will return the data
         #[08:00:20] <_florent_> so you can just set sink.valid.eq(1), sink.address.eq(the_address_you_want_to_read)
@@ -233,7 +233,8 @@ class _MyDMA(Module, AutoCSR):
         self.run_cascade_out = Signal()
 
         #start_addr = 0x41000000
-        start_addr = 0x1000000
+        start_addr = int(0x1000000/(dma.port.data_width/8))
+        #start_addr = 0x0400000
 
         # Data / Address FSM -----------------------------------------------------------------------
         fsm = FSM(reset_state="IDLE")
@@ -245,28 +246,22 @@ class _MyDMA(Module, AutoCSR):
             ),
             NextValue(self.ticks, 0)
         )
-        fsm.act("WAIT",
-            If(self.run_cascade_in,
-                NextState("RUN")
-            )
-        )
         fsm.act("RUN",
             #dma.sink.valid.eq(1),
             dma.sink.valid.eq(self.mydma_enables.storage[0]),
             dma.source.ready.eq(1),
             If(dma.sink.ready,
-                NextValue(self.data_iq_addr, self.data_iq_addr + 1),
+                If(self.ticks[0] == 1, #hold address for two cycles, as it ix x16 SDRAM
+                    NextValue(self.data_iq_addr, self.data_iq_addr + 1),
+                ),
                 If(self.data_iq_addr == (start_addr + 1024),
                     NextState("DONE")
-                ).Elif(~self.run_cascade_in,
-                    NextState("WAIT")
-                )
+                ),
+               NextValue(self.ticks, self.ticks + 1),
             ),
-            NextValue(self.ticks, self.ticks + 1),
-            Display("ticks: %d", self.ticks),
+            Display("ticks: %d\n", self.ticks),
         )
         fsm.act("DONE",
-            self.run_cascade_out.eq(1),
             self.done.eq(1)
         )
 
@@ -462,8 +457,8 @@ class SimSoC(SoCCore):
 
 
 
-        self.submodules.mydma = medma = _MyDMA(self.sdram.crossbar.get_port(mode="read",  data_width=8),
-                                       sys_clk_freq)
+        #self.submodules.mydma = medma = _MyDMA(self.sdram.crossbar.get_port(mode="read"), sys_clk_freq)
+        self.submodules.mydma = medma = _MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), sys_clk_freq)
         self.add_csr("mydma")
 
 
@@ -484,40 +479,10 @@ class SimSoC(SoCCore):
         self.dac_converted_done = Signal(1)
 
         self.comb += [
-            self.dac_sig_data,
+            self.dac_sig_data.eq(medma.dma.source.data),
             self.dac_sig_ncw.eq(medma.dma.source.valid)
         ]
 
-
-        fsm = FSM(reset_state="IDLE")
-        self.submodules += fsm
-        fsm.act("IDLE",
-            If(medma.dma.source.valid,
-                #NextValue(self.data_iq_addr, start_addr),
-                self.dac_converted_done.eq(0),
-                #self.dac_sig_data.eq(0),
-                self.dac_sig_data[0:8].eq(medma.dma.source.data),
-                NextState("RUN")
-            ),
-            NextValue(self.ticks, 0)
-        )
-        fsm.act("RUN",
-                #NextValue(rx_wr_d, Cat(rx_pin, rx_wr_d[:-1])),
-            Case(self.ticks, {
-                #0: self.dac_sig_data[0:8],medma.dma.source.data),
-                0: self.dac_sig_data[8:16].eq(medma.dma.source.data),
-                1: self.dac_sig_data[16:24].eq(medma.dma.source.data),
-                2: self.dac_sig_data[24:32].eq(medma.dma.source.data),
-                "default": NextState("DONE"),
-            }),
-            NextValue(self.ticks, self.ticks + 1),
-
-            Display("ticks: %d", self.ticks),
-        )
-        fsm.act("DONE",
-            self.dac_converted_done.eq(1),
-            NextState("IDLE")
-        )
 
 
         # Analyzer ---------------------------------------------------------------------------------
