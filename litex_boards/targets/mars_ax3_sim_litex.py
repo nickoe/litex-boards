@@ -27,6 +27,8 @@ from litedram.frontend.dma import LiteDRAMDMAWriter, LiteDRAMDMAReader
 from litedram.common import LiteDRAMNativePort
 from litedram.frontend.axi import LiteDRAMAXIPort
 
+from litevideo.output.core import DMAReader
+
 from liteeth.phy.model import LiteEthPHYModel
 from liteeth.mac import LiteEthMAC
 from liteeth.core.arp import LiteEthARP
@@ -40,6 +42,7 @@ from liteeth.common import *
 from litescope import LiteScopeAnalyzer
 
 from litex.soc.cores.led import LedChaser
+
 
 # IOs ----------------------------------------------------------------------------------------------
 
@@ -184,8 +187,17 @@ class _MyDMA(Module, AutoCSR):
         self.length      = Signal(awidth)
         self.ticks = Signal(64)
 
+
+        self.mydma_enables = CSRStorage(2, fields=[
+                                   CSRField("mydma", description="_MyDMA", size=1),
+                                   CSRField("litevideodma", description="DMAReader from litevideo", size=1),
+                               ], description="Enable DMA",)
+
+
+
+
         # DMA --------------------------------------------------------------------------------------
-        dma = LiteDRAMDMAReader(port)
+        self.dma = dma = LiteDRAMDMAReader(port, fifo_buffered=True)
         self.submodules += dma
 
         # Address FSM ------------------------------------------------------------------------------
@@ -217,17 +229,18 @@ class _MyDMA(Module, AutoCSR):
         else:
             raise NotImplementedError
 
-
         self.run_cascade_in  = Signal(reset=1)
         self.run_cascade_out = Signal()
 
+        #start_addr = 0x41000000
+        start_addr = 0x1000000
 
         # Data / Address FSM -----------------------------------------------------------------------
         fsm = FSM(reset_state="IDLE")
         self.submodules += fsm
         fsm.act("IDLE",
             If(self.start,
-                NextValue(self.data_iq_addr, 0x41000000),
+                NextValue(self.data_iq_addr, start_addr),
                 NextState("RUN")
             ),
             NextValue(self.ticks, 0)
@@ -238,17 +251,19 @@ class _MyDMA(Module, AutoCSR):
             )
         )
         fsm.act("RUN",
-            dma.sink.valid.eq(1),
+            #dma.sink.valid.eq(1),
+            dma.sink.valid.eq(self.mydma_enables.storage[0]),
             dma.source.ready.eq(1),
             If(dma.sink.ready,
                 NextValue(self.data_iq_addr, self.data_iq_addr + 1),
-                If(self.data_iq_addr == (0x41000000 + 1024),
+                If(self.data_iq_addr == (start_addr + 1024),
                     NextState("DONE")
                 ).Elif(~self.run_cascade_in,
                     NextState("WAIT")
                 )
             ),
-            NextValue(self.ticks, self.ticks + 1)
+            NextValue(self.ticks, self.ticks + 1),
+            Display("ticks: %d", self.ticks),
         )
         fsm.act("DONE",
             self.run_cascade_out.eq(1),
@@ -446,11 +461,63 @@ class SimSoC(SoCCore):
         self.submodules.dac_module = dac_vmodule
 
 
-        self.submodules.mydma = _MyDMA(self.sdram.crossbar.get_port(mode="read",  data_width=8),
+
+        self.submodules.mydma = medma = _MyDMA(self.sdram.crossbar.get_port(mode="read",  data_width=8),
                                        sys_clk_freq)
         self.add_csr("mydma")
 
 
+        '''
+        self.submodules.dma2 = dma = DMAReader(self.sdram.crossbar.get_port(mode="read",  data_width=8),fifo_depth=4)
+        self.output_sig2 = Signal(8)
+        self.comb += [
+            dma.sink.valid.eq(medma.mydma_enables.storage[1]),
+            dma.source.ready.eq(1),
+            self.output_sig2.eq(dma.source.data)
+        ]
+        self.add_csr("dma2")
+        '''
+
+        self.dac_sig_data = Signal(32)
+        self.dac_sig_ncw = Signal(1)
+        self.ticks = Signal(4)
+        self.dac_converted_done = Signal(1)
+
+        self.comb += [
+            self.dac_sig_data,
+            self.dac_sig_ncw.eq(medma.dma.source.valid)
+        ]
+
+
+        fsm = FSM(reset_state="IDLE")
+        self.submodules += fsm
+        fsm.act("IDLE",
+            If(medma.dma.source.valid,
+                #NextValue(self.data_iq_addr, start_addr),
+                self.dac_converted_done.eq(0),
+                #self.dac_sig_data.eq(0),
+                self.dac_sig_data[0:8].eq(medma.dma.source.data),
+                NextState("RUN")
+            ),
+            NextValue(self.ticks, 0)
+        )
+        fsm.act("RUN",
+                #NextValue(rx_wr_d, Cat(rx_pin, rx_wr_d[:-1])),
+            Case(self.ticks, {
+                #0: self.dac_sig_data[0:8],medma.dma.source.data),
+                0: self.dac_sig_data[8:16].eq(medma.dma.source.data),
+                1: self.dac_sig_data[16:24].eq(medma.dma.source.data),
+                2: self.dac_sig_data[24:32].eq(medma.dma.source.data),
+                "default": NextState("DONE"),
+            }),
+            NextValue(self.ticks, self.ticks + 1),
+
+            Display("ticks: %d", self.ticks),
+        )
+        fsm.act("DONE",
+            self.dac_converted_done.eq(1),
+            NextState("IDLE")
+        )
 
 
         # Analyzer ---------------------------------------------------------------------------------
@@ -496,14 +563,17 @@ class SimSoC(SoCCore):
         if sim_debug:
             platform.add_debug(self, reset=1 if trace_reset_on else 0)
         else:
-            self.comb += platform.trace.eq(1)
+            #self.comb += platform.trace.eq(1)
+            self.comb += platform.trace.eq(medma.mydma_enables.storage[1])
 
 
         if trace_hack:
             #cycles_end = 2000000
             cycles_end = 20000
             cycles = Signal(32)
-            self.sync += cycles.eq(cycles + 1)
+            self.sync += If( (medma.mydma_enables.storage[1] == 1),
+            cycles.eq(cycles + 1)
+            )
             #self.sync += If(cycles == cycles_end, Finish())
 
             self.sync += If(cycles == cycles_end,
