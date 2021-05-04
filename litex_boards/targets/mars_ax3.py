@@ -1,12 +1,4 @@
 #!/usr/bin/env python3
-
-#
-# This file is part of LiteX-Boards.
-#
-# Copyright (c) 2015-2019 Florent Kermarrec <florent@enjoy-digital.fr>
-# Copyright (c) 2020 Antmicro <www.antmicro.com>
-# SPDX-License-Identifier: BSD-2-Clause
-
 import os
 import argparse
 
@@ -35,6 +27,12 @@ from liteeth.phy.s7rgmii import LiteEthPHYRGMII
 from litex.build.generic_platform import *
 from litex.build.sim import SimPlatform
 from litex.build.sim.config import SimConfig
+
+from litescope import LiteScopeAnalyzer
+
+
+from mars_ax3_custom import *
+
 
 # CRG ----------------------------------------------------------------------------------------------
 
@@ -69,7 +67,7 @@ class _CRG(Module):
         #self.comb += platform.request("eth_ref_clk").eq(self.cd_eth.clk)
 
 
-
+'''
 class _MyDAC(Module, AutoCSR):
     def __init__(self, data_a, data_b, cw, sys_clk_freq, period=1e0):
         self.cw = CSRStorage(1, description="DAC code word register")
@@ -84,8 +82,7 @@ class _MyDAC(Module, AutoCSR):
             data_b.eq(self.data_b_storage.storage[0:10]),
             cw.eq(self.cw.storage)
         ]
-
-
+'''
 # BaseSoC ------------------------------------------------------------------------------------------
 
 # litedram struct, used here as it is not merged and tested for upstream ---------------------------
@@ -193,14 +190,16 @@ class BaseSoC(SoCCore):
             sys_clk_freq = sys_clk_freq)
         self.add_csr("leds")
 
-        # MAX DAC...
+        # MAX5854 DAC...
         dac_plat = platform.request("dac")
+        '''
         self.submodules.dac = _MyDAC(
             data_a=dac_plat.data_a,
             data_b=dac_plat.data_b,
             cw=dac_plat.cw,
             sys_clk_freq=sys_clk_freq)
         self.add_csr("dac")
+        '''
 
         # clocking for the DAC
         # As the differential output is in the same bank as the other signals that are LVCMOS33 we
@@ -229,7 +228,60 @@ class BaseSoC(SoCCore):
             if with_etherbone:
                 self.add_etherbone(phy=self.ethphy, ip_address=eth_ip)
 
+        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), self.crg.cd_dac.clk)
+        self.add_csr("mydma")
 
+
+        intermediate_signal = Signal(20)
+        self.comb += intermediate_signal.eq(Cat(medma.dma.source.data[0:10], medma.dma.source.data[16:26] ))
+        # Create our platform (fpga interface)
+        platform.add_source("dac.v")
+        # Create our module (fpga description)
+        dac_vmodule = Module()
+        dac_vmodule.specials += Instance("dac",
+                                    i_i_clk=ClockSignal(),
+                                    i_i_reset=ResetSignal(),
+                                    i_i_tdata=intermediate_signal,
+                                    i_i_tvalid=medma.dma.source.valid,
+                                    o_o_tready=None,
+                                    o_o_sig_a=dac_plat.data_a,
+                                    o_o_sig_b=dac_plat.data_b,
+                                    o_o_ncw=dac_plat.cw
+                                    )
+        self.submodules.dac_module = dac_vmodule
+
+
+        # Analyzer ---------------------------------------------------------------------------------
+        #if with_analyzer:
+        analyzer_signals = [
+            #platform.lookup_request("user_led", 0),
+            #platform.lookup_request("user_led", 1),
+            #platform.lookup_request("user_led", 2),
+            #platform.lookup_request("user_led", 3),
+            #self.mydma.output_sig,
+            self.mydma.data_iq_addr,
+            #self.mydma.start,
+            self.mydma.done,
+            self.mydma.ticks,
+            medma.dma.source.data,
+            medma.dma.source.valid,
+            medma.dma.source.ready,
+            dac_plat.data_a,
+            dac_plat.data_b,
+            dac_plat.cw,
+            dac_plat.clkx_p,
+            #dac_plat.clkx_n,
+            self.crg.cd_dac.clk,
+            #self.crg.cd_sys.clk,
+            #self.dac,
+            #self.sdrphy,
+            #self.user_leds,
+        ]
+        self.submodules.analyzer = LiteScopeAnalyzer(analyzer_signals,
+            depth        = 1024,
+            clock_domain = "sys",
+            csr_csv      = "analyzer.csv")
+        self.add_csr("analyzer")
 
 # Build --------------------------------------------------------------------------------------------
 
@@ -256,6 +308,7 @@ def main():
     soc_sdram_args(parser)
     vivado_build_args(parser)
     args = parser.parse_args()
+
 
     soc = BaseSoC(
         toolchain      = args.toolchain,
@@ -293,7 +346,7 @@ def main():
             sim_config.add_module("ethernet", "eth", args={"interface": "tap0", "ip": args.remote_ip})
 
 
-        board_name = "sim"
+        board_name = "mars_ax3"
         build_dir  = os.path.join("build", board_name)
         builder = Builder(soc, output_dir=build_dir,
             compile_gateware = args.build,

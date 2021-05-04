@@ -95,7 +95,7 @@ class _MyDMA(Module, AutoCSR):
         # Address FSM ------------------------------------------------------------------------------
         cmd_counter = Signal(port.address_width, reset_less=True)
 
-        #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
+        #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json on hardware
         #TODO use a fsm, similar to _LiteDRAMBISTChecker or _LiteDRAMBISTGenerator to excercise the address and map it to the registers wired to the DAC?
         # I mean (dac_plat.data_a and dac_plat.data_b) instead of using the _MyDAC module
         #TODO Secondly this should output in an AXIStreamInterface
@@ -196,15 +196,6 @@ _io = [
         Subsignal("sink_ready", Pins(1)),
         Subsignal("sink_data",  Pins(8)),
     ),
-    ("serial", 1,
-        Subsignal("source_valid", Pins(1)),
-        Subsignal("source_ready", Pins(1)),
-        Subsignal("source_data", Pins(8)),
-
-        Subsignal("sink_valid", Pins(1)),
-        Subsignal("sink_ready", Pins(1)),
-        Subsignal("sink_data", Pins(8)),
-     ),
     ("user_led", 0, Pins(1)),
     ("user_led", 1, Pins(2)),
     ("user_led", 2, Pins(3)),
@@ -215,6 +206,7 @@ _io = [
         Subsignal("cs_n", Pins(1), Misc("PULLUP True")),
         Subsignal("miso", Pins(1), Misc("PULLUP True")),
      ),
+
 ]
 
 
@@ -231,7 +223,15 @@ class BaseSoC(SoCCore):
         "uart":   2,
         "timer0": 3,
     }}
-    mem_map = {**SoCCore.mem_map, **{"spiflash": 0x20000000}}
+    interrupt_map = {**SoCCore.interrupt_map, **{
+        "uart":   0,
+        "timer0": 1,
+    }}
+    mem_map = {**SoCCore.mem_map, **{
+        "spiflash": 0x20000000,
+        "csr":      0xf0000000,
+    }}
+
     def __init__(self, toolchain="vivado", spiflash="spiflash_1x", sys_clk_freq=int(100e6), ident_version=True,
                  init_memories=False,
                  sdram_module="MT48LC16M16",
@@ -248,7 +248,7 @@ class BaseSoC(SoCCore):
             ident          = "LiteX SoC on Mars AX3 (IQFPGA) AAUAST6",
             ident_version  = ident_version,
             #integrated_rom_size      = 0x10000,
-            #uart_name = "sim",
+            uart_name = "sim",
             **kwargs)
         self.add_config("DISABLE_DELAYS")
 
@@ -256,6 +256,7 @@ class BaseSoC(SoCCore):
         if init_memories:
             ram_init = get_mem_data({
                 "./build/sim/software/bios/bios.bin": "0x00000000",
+                "test_data.cs16": "0x41000000",
             }, "little")
 
         # CRG --------------------------------------------------------------------------------------
@@ -363,10 +364,13 @@ def main():
     sdopts.add_argument("--with-sdcard",      action="store_true",              help="Enable SDCard support")
     parser.add_argument("--no-ident-version", action="store_false",             help="Disable build time output")
     builder_args(parser)
+    #soc_sdram_args(parser)
     args = parser.parse_args()
 
     sim_config = SimConfig(default_clk="sys_clk")
     sim_config.add_module("serial2console", "serial")
+    sys_clk_freq = int(1e6)
+    sim_config.add_clocker("sys_clk", freq_hz=sys_clk_freq)
 
     soc = BaseSoC(
         toolchain=args.toolchain,
@@ -383,9 +387,10 @@ def main():
 
 
     #verilator
-    board_name = "sim"
+    board_name = "sim_mars_ax3_2"
     build_dir  = os.path.join("build", board_name)
     builder = Builder(soc, output_dir=build_dir,
+        compile_software = not args.no_compile_software,
         compile_gateware = args.build,
         csr_json         = os.path.join(build_dir, "csr.json"))
     builder.build(sim_config=sim_config,
