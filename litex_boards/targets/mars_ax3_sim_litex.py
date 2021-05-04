@@ -294,7 +294,24 @@ class SimSoC(SoCCore):
                                     )
         self.submodules.blink = module
 
-        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), sys_clk_freq)
+
+
+        sysclk_cycles_per_dacclk_end = 3
+        hack_cycles = Signal(32)
+        dac_clk = Signal(1, reset=0)
+        self.sync += If(dac_clk == 0,
+                        hack_cycles.eq(hack_cycles + 1),
+                        If(hack_cycles == sysclk_cycles_per_dacclk_end,
+                           dac_clk.eq(1),
+                           )
+                      ).Else(
+                        hack_cycles.eq(hack_cycles - 1),
+                        If(hack_cycles == 0,
+                           dac_clk.eq(0),
+                           )
+                      )
+
+        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), dac_clk)
         self.add_csr("mydma")
 
 
@@ -329,7 +346,7 @@ class SimSoC(SoCCore):
 
         # TODO connect up the i_t<somthing> signals to the AXI stream
         module.specials += Instance("dac",
-                                    i_i_clk=ClockSignal(),
+                                    i_i_clk=dac_clk,
                                     i_i_reset=ResetSignal(),
                                     i_i_tdata=Cat(medma.dma.source.data[0:10], medma.dma.source.data[16:26] ),
                                     i_i_tvalid=medma.dma.source.valid,

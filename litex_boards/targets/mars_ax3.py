@@ -239,7 +239,7 @@ class BaseSoC(SoCCore):
         # Create our module (fpga description)
         dac_vmodule = Module()
         dac_vmodule.specials += Instance("dac",
-                                    i_i_clk=ClockSignal(),
+                                    i_i_clk=self.crg.cd_dac.clk,
                                     i_i_reset=ResetSignal(),
                                     i_i_tdata=intermediate_signal,
                                     i_i_tvalid=medma.dma.source.valid,
@@ -266,10 +266,12 @@ class BaseSoC(SoCCore):
             medma.dma.source.data,
             medma.dma.source.valid,
             medma.dma.source.ready,
+            self.mydma.Q,
+            self.mydma.Qi,
             dac_plat.data_a,
             dac_plat.data_b,
             dac_plat.cw,
-            dac_plat.clkx_p,
+            #dac_plat.clkx_p,
             #dac_plat.clkx_n,
             self.crg.cd_dac.clk,
             #self.crg.cd_sys.clk,
