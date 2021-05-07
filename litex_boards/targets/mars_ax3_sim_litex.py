@@ -294,24 +294,24 @@ class SimSoC(SoCCore):
                                     )
         self.submodules.blink = module
 
-
-
+        # Create dac clock domain that is slower than sys clk
         sysclk_cycles_per_dacclk_end = 3
         hack_cycles = Signal(32)
         dac_clk = Signal(1, reset=0)
-        self.sync += If(dac_clk == 0,
+        self.clock_domains.cd_dac = ClockDomain()
+        self.sync += If(self.cd_dac.clk == 0,
                         hack_cycles.eq(hack_cycles + 1),
                         If(hack_cycles == sysclk_cycles_per_dacclk_end,
-                           dac_clk.eq(1),
+                           self.cd_dac.clk.eq(1),
                            )
-                      ).Else(
-                        hack_cycles.eq(hack_cycles - 1),
-                        If(hack_cycles == 0,
-                           dac_clk.eq(0),
-                           )
-                      )
+                        ).Else(
+                           hack_cycles.eq(hack_cycles - 1),
+                           If(hack_cycles == 0,
+                              self.cd_dac.clk.eq(0),
+                              )
+        )
 
-        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), dac_clk)
+        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), self.cd_dac.clk)
         self.add_csr("mydma")
 
 
@@ -326,29 +326,16 @@ class SimSoC(SoCCore):
         self.add_csr("dma2")
         '''
 
-        self.dac_sig_data = Signal(32)
-        self.dac_sig_ncw = Signal(1)
-        self.ticks = Signal(4)
-        self.dac_converted_done = Signal(1)
-
-        self.comb += [
-            self.dac_sig_data.eq(medma.dma.source.data),
-            self.dac_sig_ncw.eq(medma.dma.source.valid)
-        ]
-
-
-
+        intermediate_signal = Signal(20)
+        self.comb += intermediate_signal.eq(Cat(self.mydma.output_sig[0:10], self.mydma.output_sig[16:26]))
         # Create our platform (fpga interface)
         platform.add_source("dac.v")
         # Create our module (fpga description)
         dac_vmodule = Module()
-
-
-        # TODO connect up the i_t<somthing> signals to the AXI stream
         module.specials += Instance("dac",
                                     i_i_clk=dac_clk,
                                     i_i_reset=ResetSignal(),
-                                    i_i_tdata=Cat(medma.dma.source.data[0:10], medma.dma.source.data[16:26] ),
+                                    i_i_tdata=intermediate_signal,
                                     i_i_tvalid=medma.dma.source.valid,
                                     o_o_tready=None,
                                     o_o_sig_a=dac_plat.data_a,
