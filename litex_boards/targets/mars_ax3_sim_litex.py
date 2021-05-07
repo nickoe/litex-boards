@@ -298,7 +298,7 @@ class SimSoC(SoCCore):
         sysclk_cycles_per_dacclk_end = 3
         hack_cycles = Signal(32)
         dac_clk = Signal(1, reset=0)
-        self.clock_domains.cd_dac = ClockDomain()
+        self.clock_domains.cd_dac = cd_dac = ClockDomain()
         self.sync += If(self.cd_dac.clk == 0,
                         hack_cycles.eq(hack_cycles + 1),
                         If(hack_cycles == sysclk_cycles_per_dacclk_end,
@@ -311,9 +311,10 @@ class SimSoC(SoCCore):
                               )
         )
 
-        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), self.cd_dac.clk)
+        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), cd_dac.name)
         self.add_csr("mydma")
 
+        self.submodules.dac = dac = AlexandersDAC(platform, dac_plat, cd_dac)
 
         '''
         self.submodules.dma2 = dma = DMAReader(self.sdram.crossbar.get_port(mode="read",  data_width=8),fifo_depth=4)
@@ -326,23 +327,6 @@ class SimSoC(SoCCore):
         self.add_csr("dma2")
         '''
 
-        intermediate_signal = Signal(20)
-        self.comb += intermediate_signal.eq(Cat(self.mydma.output_sig[0:10], self.mydma.output_sig[16:26]))
-        # Create our platform (fpga interface)
-        platform.add_source("dac.v")
-        # Create our module (fpga description)
-        dac_vmodule = Module()
-        module.specials += Instance("dac",
-                                    i_i_clk=dac_clk,
-                                    i_i_reset=ResetSignal(),
-                                    i_i_tdata=intermediate_signal,
-                                    i_i_tvalid=medma.dma.source.valid,
-                                    o_o_tready=None,
-                                    o_o_sig_a=dac_plat.data_a,
-                                    o_o_sig_b=dac_plat.data_b,
-                                    o_o_ncw=dac_plat.cw
-                                    )
-        self.submodules.dac_module = dac_vmodule
 
 
         # Analyzer ---------------------------------------------------------------------------------

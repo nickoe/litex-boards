@@ -11,6 +11,10 @@ from litedram.frontend.bist import get_ashift_awidth
 from litedram.frontend.dma import LiteDRAMDMAWriter, LiteDRAMDMAReader
 from litedram.common import LiteDRAMNativePort
 
+from litex.soc.interconnect import stream
+from litex.soc.interconnect.stream import Endpoint
+
+
 
 # IOs for simulation -------------------------------------------------------------------------------
 
@@ -62,16 +66,39 @@ class MySimPlatform(SimPlatform):
 
 
 # Other stuff
+class AlexandersDAC(Module):
+    def __init__(self, platform, pads, dac_clk):
+        self.sink = sink = Endpoint([('data', 32)])
+
+        # We just takes the 10 bit from each byte pair needed
+        intermediate_signal = Signal(20)
+        self.comb += intermediate_signal.eq(Cat(sink.data[0:10], self.sink.data[16:26]))
+
+        # Create our platform (fpga interface)
+        platform.add_source("dac.v")
+        # Create our module (fpga description)
+        dac_vmodule = Instance("dac",
+                                    i_i_clk=dac_clk.clk,
+                                    i_i_reset=ResetSignal(),
+                                    i_i_tdata=intermediate_signal,
+                                    i_i_tvalid=None,
+                                    o_o_tready=None,
+                                    o_o_sig_a=pads.data_a,
+                                    o_o_sig_b=pads.data_b,
+                                    o_o_ncw=pads.cw
+                                    )
+        self.specials += dac_vmodule
+
 
 class MyDMA(Module, AutoCSR):
-    def __init__(self, port, dac_clk, period=1e0):
+    def __init__(self, port, clock_domain, period=1e0):
         ashift, awidth = get_ashift_awidth(port)
         self.start       = Signal(reset=1)
         self.done        = Signal()
         self.base        = Signal(awidth)
         self.end         = Signal(awidth)
         self.length      = Signal(awidth)
-        self.ticks = Signal(64)
+        self.ticks = Signal(16)
 
 
         self.mydma_enables = CSRStorage(2, fields=[
@@ -81,13 +108,21 @@ class MyDMA(Module, AutoCSR):
 
 
 
-
+        depth = 16
         # DMA --------------------------------------------------------------------------------------
-        self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=16, fifo_buffered=False)
+        self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=depth, fifo_buffered=False)
         self.submodules += dma
 
-        # Address FSM ------------------------------------------------------------------------------
-        cmd_counter = Signal(port.address_width, reset_less=True)
+        # Adding a FIFO that can work between clock domains to optimize memory access
+        self.myfifo = myfifo = stream.AsyncFIFO([("data", dma.port.data_width)], depth * 2)
+        self.submodules += ClockDomainsRenamer({"write": "sys", "read": "dac"})(myfifo)
+        self.submodules += myfifo
+
+        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", dma.port.data_width)], cd_from="sys", cd_to=clock_domain)
+        self.comb += self.dma.source.connect(self.cdc.sink)
+
+        #TODO how to attack to myfifo? Another connect?
+        #self.comb += cdc.source.connect_flat()
 
         #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
         #TODO use a fsm, similar to _LiteDRAMBISTChecker or _LiteDRAMBISTGenerator to excercise the address and map it to the registers wired to the DAC?
@@ -115,15 +150,14 @@ class MyDMA(Module, AutoCSR):
         else:
             raise NotImplementedError
 
-        self.run_cascade_in  = Signal(reset=1)
-        self.run_cascade_out = Signal()
+
 
         #start_addr = 0x41000000
         start_addr = int(0x1000000/(dma.port.data_width/8))
         #start_addr = 0x0400000
         self.Q = Signal(1)
         self.Qi = Signal(1)
-        self.sync += self.Q.eq(dac_clk)
+        #self.sync += self.Q.eq(dac_clk)
         self.comb += self.Qi.eq(~self.Q)
 
         # Data / Address FSM -----------------------------------------------------------------------
@@ -156,10 +190,5 @@ class MyDMA(Module, AutoCSR):
 
         self.comb += [
             dma_sink_addr.eq(self.data_iq_addr),
-            self.output_sig.eq(dma.source.data)
-        ]
-
-        self.comb += [
-            dma_sink_addr.eq(self.data_iq_addr),
-            self.output_sig.eq(dma.source.data)
+            #self.output_sig.eq(dma.source.data)
         ]
