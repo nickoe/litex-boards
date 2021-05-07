@@ -272,7 +272,7 @@ class SimSoC(SoCCore):
         # RAM ->  _MyDMA -> AXI Stream -> DAC pins
         # LiteDRAMDMAReader -> AXIStreamInterface -> dac_plat?
 
-        dac_plat = platform.request("dac")
+        #dac_plat = platform.request("dac")
         '''
         self.submodules.dac = _MyDAC(
             data_a=dac_plat.data_a,
@@ -311,10 +311,9 @@ class SimSoC(SoCCore):
                               )
         )
 
-        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), cd_dac.name)
+        self.submodules.mydma = medma = MyDMA(platform, self.sdram.crossbar.get_port(mode="read", data_width=32), cd_dac)
         self.add_csr("mydma")
 
-        self.submodules.dac = dac = AlexandersDAC(platform, dac_plat, cd_dac)
 
         '''
         self.submodules.dma2 = dma = DMAReader(self.sdram.crossbar.get_port(mode="read",  data_width=8),fifo_depth=4)

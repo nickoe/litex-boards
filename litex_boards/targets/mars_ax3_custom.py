@@ -67,8 +67,10 @@ class MySimPlatform(SimPlatform):
 
 # Other stuff
 class AlexandersDAC(Module):
-    def __init__(self, platform, pads, dac_clk):
+    def __init__(self, platform, dac_clk):
         self.sink = sink = Endpoint([('data', 32)])
+
+        pads = platform.request("dac")
 
         # We just takes the 10 bit from each byte pair needed
         intermediate_signal = Signal(20)
@@ -81,8 +83,8 @@ class AlexandersDAC(Module):
                                     i_i_clk=dac_clk.clk,
                                     i_i_reset=ResetSignal(),
                                     i_i_tdata=intermediate_signal,
-                                    i_i_tvalid=None,
-                                    o_o_tready=None,
+                                    i_i_tvalid=sink.valid,
+                                    o_o_tready=sink.ready,
                                     o_o_sig_a=pads.data_a,
                                     o_o_sig_b=pads.data_b,
                                     o_o_ncw=pads.cw
@@ -91,7 +93,7 @@ class AlexandersDAC(Module):
 
 
 class MyDMA(Module, AutoCSR):
-    def __init__(self, port, clock_domain, period=1e0):
+    def __init__(self,platform, port, clock_domain, period=1e0):
         ashift, awidth = get_ashift_awidth(port)
         self.start       = Signal(reset=1)
         self.done        = Signal()
@@ -114,15 +116,16 @@ class MyDMA(Module, AutoCSR):
         self.submodules += dma
 
         # Adding a FIFO that can work between clock domains to optimize memory access
-        self.myfifo = myfifo = stream.AsyncFIFO([("data", dma.port.data_width)], depth * 2)
-        self.submodules += ClockDomainsRenamer({"write": "sys", "read": "dac"})(myfifo)
-        self.submodules += myfifo
+        #self.myfifo = myfifo = stream.AsyncFIFO([("data", dma.port.data_width)], depth * 2)
+        #self.submodules += ClockDomainsRenamer({"write": "sys", "read": "dac"})(myfifo)
+        #self.submodules += myfifo
 
-        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", dma.port.data_width)], cd_from="sys", cd_to=clock_domain)
+        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", dma.port.data_width)], cd_from="sys", cd_to=clock_domain.name)
         self.comb += self.dma.source.connect(self.cdc.sink)
 
         #TODO how to attack to myfifo? Another connect?
-        #self.comb += cdc.source.connect_flat()
+        self.submodules.dac = dac = AlexandersDAC(platform, clock_domain)
+        self.comb += cdc.source.connect(dac.sink)
 
         #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
         #TODO use a fsm, similar to _LiteDRAMBISTChecker or _LiteDRAMBISTGenerator to excercise the address and map it to the registers wired to the DAC?
