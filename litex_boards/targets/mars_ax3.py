@@ -48,7 +48,7 @@ class _CRG(Module):
         #self.clock_domains.cd_eth       = ClockDomain()
 
         # # #
-        ## TODO recheck these, changed from 100 MHz to 50MHz  arty to marx ax3
+        ## TODO recheck these, changed from 100 MHz to 50MHz  arty to mars ax3
         self.submodules.pll = pll = S7PLL(speedgrade=-1)
         self.comb += pll.reset.eq(~platform.request("cpu_reset") | self.rst)
         pll.register_clkin(platform.request("clk50"), 50e6)
@@ -190,28 +190,6 @@ class BaseSoC(SoCCore):
             sys_clk_freq = sys_clk_freq)
         self.add_csr("leds")
 
-        # MAX5854 DAC...
-        dac_plat = platform.request("dac")
-        '''
-        self.submodules.dac = _MyDAC(
-            data_a=dac_plat.data_a,
-            data_b=dac_plat.data_b,
-            cw=dac_plat.cw,
-            sys_clk_freq=sys_clk_freq)
-        self.add_csr("dac")
-        '''
-
-        # clocking for the DAC
-        # As the differential output is in the same bank as the other signals that are LVCMOS33 we
-        # can't really drive this as a diff out. :(
-        # And the logic inputs needs 0.64*DVdd = 2.145 V for high state..
-        #self.specials += DifferentialOutput(self.crg.cd_dac.clk, dac_plat.clkx_p, dac_plat.clkx_n)
-
-        self.comb += dac_plat.clkx_p.eq(self.crg.cd_dac.clk)
-        self.comb += dac_plat.clkx_n.eq(self.crg.cd_dac_180.clk)
-        self.comb += dac_plat.clkx_test.eq(self.crg.cd_dac.clk)
-        self.comb += dac_plat.clkx_test2.eq(self.crg.cd_dac_180.clk)
-
 
 
         self.add_jtagbone()
@@ -228,27 +206,10 @@ class BaseSoC(SoCCore):
             if with_etherbone:
                 self.add_etherbone(phy=self.ethphy, ip_address=eth_ip)
 
-        self.submodules.mydma = medma = MyDMA(self.sdram.crossbar.get_port(mode="read", data_width=32), self.crg.cd_dac.clk)
+        self.submodules.mydma = medma = MyDMA(platform,
+                                              self.sdram.crossbar.get_port(mode="read", data_width=32),
+                                              self.crg.cd_dac)
         self.add_csr("mydma")
-
-
-        intermediate_signal = Signal(20)
-        self.comb += intermediate_signal.eq(Cat(medma.dma.source.data[0:10], medma.dma.source.data[16:26] ))
-        # Create our platform (fpga interface)
-        platform.add_source("dac.v")
-        # Create our module (fpga description)
-        dac_vmodule = Module()
-        dac_vmodule.specials += Instance("dac",
-                                    i_i_clk=self.crg.cd_dac.clk,
-                                    i_i_reset=ResetSignal(),
-                                    i_i_tdata=intermediate_signal,
-                                    i_i_tvalid=medma.dma.source.valid,
-                                    o_o_tready=None,
-                                    o_o_sig_a=dac_plat.data_a,
-                                    o_o_sig_b=dac_plat.data_b,
-                                    o_o_ncw=dac_plat.cw
-                                    )
-        self.submodules.dac_module = dac_vmodule
 
 
         # Analyzer ---------------------------------------------------------------------------------
@@ -263,19 +224,33 @@ class BaseSoC(SoCCore):
             #self.mydma.start,
             self.mydma.done,
             self.mydma.ticks,
+            medma.dma.sink.address,
+            medma.dma.sink.valid,
+            medma.dma.sink.ready,
             medma.dma.source.data,
             medma.dma.source.valid,
             medma.dma.source.ready,
-            self.mydma.Q,
-            self.mydma.Qi,
-            dac_plat.data_a,
-            dac_plat.data_b,
-            dac_plat.cw,
+            medma.cdc.sink.data,
+            medma.cdc.sink.valid,
+            medma.cdc.sink.ready,
+            #medma.cdc.source.data,
+            #medma.cdc.source.valid,
+            #medma.cdc.source.ready,
+            medma.dac.sink.data,
+            medma.dac.sink.valid,
+            medma.dac.sink.ready,
+            platform.lookup_request("dac:data_a"),
+            platform.lookup_request("dac:data_b"),
+            self.mydma.mydma_enables.storage,
+            #dac_plat.data_a,
+            #dac_plat.data_b,
+            #dac_plat.cw,
             #dac_plat.clkx_p,
             #dac_plat.clkx_n,
             self.crg.cd_dac.clk,
             #self.crg.cd_sys.clk,
-            #self.dac,
+            #dac.dac.o_sig_a,
+            #medma.dac.o_sig_b,
             #self.sdrphy,
             #self.user_leds,
         ]

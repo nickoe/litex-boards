@@ -67,6 +67,7 @@ class MySimPlatform(SimPlatform):
 
 # Other stuff
 class AlexandersDAC(Module):
+    #MAX5854 DAC
     def __init__(self, platform, dac_clk):
         self.sink = sink = Endpoint([('data', 32)])
 
@@ -92,6 +93,19 @@ class AlexandersDAC(Module):
         self.specials += dac_vmodule
 
 
+        # clocking for the DAC
+        # As the differential output is in the same bank as the other signals that are LVCMOS33 we
+        # can't really drive this as a diff out. :(
+        # And the logic inputs needs 0.64*DVdd = 2.145 V for high state..
+        #self.specials += DifferentialOutput(self.crg.cd_dac.clk, dac_plat.clkx_p, dac_plat.clkx_n)
+
+        self.comb += pads.clkx_p.eq(dac_clk.clk)
+        #self.comb += pads.clkx_n.eq(self.crg.cd_dac_180.clk)
+        self.comb += pads.clkx_test.eq(dac_clk.clk)
+        #self.comb += pads.clkx_test2.eq(self.crg.cd_dac_180.clk)
+
+
+
 class MyDMA(Module, AutoCSR):
     def __init__(self,platform, port, clock_domain, period=1e0):
         ashift, awidth = get_ashift_awidth(port)
@@ -100,7 +114,7 @@ class MyDMA(Module, AutoCSR):
         self.base        = Signal(awidth)
         self.end         = Signal(awidth)
         self.length      = Signal(awidth)
-        self.ticks = Signal(16)
+        self.ticks = Signal(32)
 
 
         self.mydma_enables = CSRStorage(2, fields=[
@@ -115,22 +129,13 @@ class MyDMA(Module, AutoCSR):
         self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=16, fifo_buffered=False)
         self.submodules += dma
 
-        # Adding a FIFO that can work between clock domains to optimize memory access
-        #self.myfifo = myfifo = stream.AsyncFIFO([("data", dma.port.data_width)], depth * 2)
-        #self.submodules += ClockDomainsRenamer({"write": "sys", "read": "dac"})(myfifo)
-        #self.submodules += myfifo
-
         self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", dma.port.data_width)], cd_from="sys", cd_to=clock_domain.name)
         self.comb += self.dma.source.connect(self.cdc.sink)
 
-        #TODO how to attack to myfifo? Another connect?
         self.submodules.dac = dac = AlexandersDAC(platform, clock_domain)
         self.comb += cdc.source.connect(dac.sink)
 
         #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
-        #TODO use a fsm, similar to _LiteDRAMBISTChecker or _LiteDRAMBISTGenerator to excercise the address and map it to the registers wired to the DAC?
-        # I mean (dac_plat.data_a and dac_plat.data_b) instead of using the _MyDAC module
-        #TODO Secondly this should output in an AXIStreamInterface
 
         #self.data_iq_addr = CSRStorage(32, description="Address of our IQ samples in memory", write_from_dev=True)
         self.data_iq_addr = Signal(32)
@@ -142,24 +147,15 @@ class MyDMA(Module, AutoCSR):
         #data_b.eq(self.data_iq_storage.storage[10:20])
         self.output_sig = Signal(dma.port.data_width)
 
-        #[07:59:40] <_florent_> nickoe: LiteDRAMDMAReader has two endpoints: a sink to provide your read request and a source that will return the data
-        #[08:00:20] <_florent_> so you can just set sink.valid.eq(1), sink.address.eq(the_address_you_want_to_read)
-        #[08:00:31] <_florent_> then wait sink.ready to be 1
-        #[08:00:57] <_florent_> and data will be returned on source.data when source.valid is 1
-
-
         if isinstance(port, LiteDRAMNativePort): # addressing in dwords
             dma_sink_addr = dma.sink.address
         else:
             raise NotImplementedError
 
-
-
         #start_addr = 0x41000000
         start_addr = int(0x1000000/(dma.port.data_width/8))
         #start_addr = 0x0400000
 
-        # Data / Address FSM -----------------------------------------------------------------------
         fsm = FSM(reset_state="IDLE")
         self.submodules += fsm
         fsm.act("IDLE",
@@ -170,24 +166,20 @@ class MyDMA(Module, AutoCSR):
                 NextValue(self.ticks, 0)
                 )
         fsm.act("RUN",
-                # dma.sink.valid.eq(1),
                 dma.sink.valid.eq(self.mydma_enables.storage[0]),
-                If(dma.sink.ready,
-                      #If(cdc.source.ready,
-                        NextValue(self.data_iq_addr, self.data_iq_addr + 1),
-                         ),
-                      #),
-                   If(self.data_iq_addr == (start_addr + 1024),
-                      NextState("DONE")
-                      ),
                 NextValue(self.ticks, self.ticks + 1),
-
+                If(self.data_iq_addr == (start_addr + 1024),
+                   NextState("DONE")
+                   ),
+                If(dma.sink.ready,
+                   NextValue(self.data_iq_addr, self.data_iq_addr + 1),
+                   ),
                 )
         fsm.act("DONE",
-                self.done.eq(1)
+                self.done.eq(1),
+                NextState("IDLE"),
                 )
 
         self.comb += [
             dma_sink_addr.eq(self.data_iq_addr),
-            #self.output_sig.eq(dma.source.data)
         ]
