@@ -173,10 +173,10 @@ class MyDMA(Module, AutoCSR):
                 # dma.sink.valid.eq(1),
                 dma.sink.valid.eq(self.mydma_enables.storage[0]),
                 If(dma.sink.ready,
-                      If(cdc.source.ready,
+                      #If(cdc.source.ready,
                         NextValue(self.data_iq_addr, self.data_iq_addr + 1),
                          ),
-                      ),
+                      #),
                    If(self.data_iq_addr == (start_addr + 1024),
                       NextState("DONE")
                       ),
