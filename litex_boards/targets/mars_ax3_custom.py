@@ -112,7 +112,7 @@ class MyDMA(Module, AutoCSR):
 
 
         # DMA --------------------------------------------------------------------------------------
-        self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=8, fifo_buffered=False)
+        self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=16, fifo_buffered=False)
         self.submodules += dma
 
         # Adding a FIFO that can work between clock domains to optimize memory access
