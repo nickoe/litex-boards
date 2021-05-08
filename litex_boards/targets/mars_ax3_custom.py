@@ -110,9 +110,9 @@ class MyDMA(Module, AutoCSR):
 
 
 
-        depth = 16
+
         # DMA --------------------------------------------------------------------------------------
-        self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=depth, fifo_buffered=False)
+        self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=8, fifo_buffered=False)
         self.submodules += dma
 
         # Adding a FIFO that can work between clock domains to optimize memory access
@@ -158,10 +158,6 @@ class MyDMA(Module, AutoCSR):
         #start_addr = 0x41000000
         start_addr = int(0x1000000/(dma.port.data_width/8))
         #start_addr = 0x0400000
-        self.Q = Signal(1)
-        self.Qi = Signal(1)
-        #self.sync += self.Q.eq(dac_clk)
-        self.comb += self.Qi.eq(~self.Q)
 
         # Data / Address FSM -----------------------------------------------------------------------
         fsm = FSM(reset_state="IDLE")
@@ -176,16 +172,16 @@ class MyDMA(Module, AutoCSR):
         fsm.act("RUN",
                 # dma.sink.valid.eq(1),
                 dma.sink.valid.eq(self.mydma_enables.storage[0]),
-                dma.source.ready.eq(1),
                 If(dma.sink.ready,
-                   If(self.ticks[0] == 1,  # hold address for two cycles, as it ix x16 SDRAM
-                      NextValue(self.data_iq_addr, self.data_iq_addr + 1),
+                      If(cdc.source.ready,
+                        NextValue(self.data_iq_addr, self.data_iq_addr + 1),
+                         ),
                       ),
                    If(self.data_iq_addr == (start_addr + 1024),
                       NextState("DONE")
                       ),
-                   NextValue(self.ticks, self.ticks + 1),
-                   ),
+                NextValue(self.ticks, self.ticks + 1),
+
                 )
         fsm.act("DONE",
                 self.done.eq(1)
