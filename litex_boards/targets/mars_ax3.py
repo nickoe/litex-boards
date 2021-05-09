@@ -206,9 +206,29 @@ class BaseSoC(SoCCore):
             if with_etherbone:
                 self.add_etherbone(phy=self.ethphy, ip_address=eth_ip)
 
+        '''
+        # Create dac clock domain that is slower than sys clk
+        sysclk_cycles_per_dacclk_end = 3
+        hack_cycles = Signal(32)
+        dac_clk = Signal(1, reset=0)
+        self.clock_domains.cd_dac = cd_dac = ClockDomain()
+        self.sync += If(self.cd_dac.clk == 0,
+                        hack_cycles.eq(hack_cycles + 1),
+                        If(hack_cycles == sysclk_cycles_per_dacclk_end,
+                           self.cd_dac.clk.eq(1),
+                           )
+                        ).Else(
+                           hack_cycles.eq(hack_cycles - 1),
+                           If(hack_cycles == 0,
+                              self.cd_dac.clk.eq(0),
+                              )
+        )
+        '''
+
         self.submodules.mydma = medma = MyDMA(platform,
                                               self.sdram.crossbar.get_port(mode="read", data_width=32),
                                               self.crg.cd_dac)
+                                              #cd_dac)
         self.add_csr("mydma")
 
 
@@ -219,23 +239,25 @@ class BaseSoC(SoCCore):
             #platform.lookup_request("user_led", 1),
             #platform.lookup_request("user_led", 2),
             #platform.lookup_request("user_led", 3),
-            #self.mydma.output_sig,
+            self.mydma.output_sig,
+            self.mydma.output_sig2,
             self.mydma.data_iq_addr,
             #self.mydma.start,
             self.mydma.done,
             self.mydma.ticks,
-            medma.dma.sink.address,
-            medma.dma.sink.valid,
-            medma.dma.sink.ready,
-            medma.dma.source.data,
-            medma.dma.source.valid,
-            medma.dma.source.ready,
-            medma.cdc.sink.data,
-            medma.cdc.sink.valid,
-            medma.cdc.sink.ready,
-            #medma.cdc.source.data,
-            #medma.cdc.source.valid,
-            #medma.cdc.source.ready,
+            self.mydma.ticks_tic,
+            # medma.dma.sink.address,
+            # medma.dma.sink.valid,
+            # medma.dma.sink.ready,
+            # medma.dma.source.data,
+            # medma.dma.source.valid,
+            # medma.dma.source.ready,
+            # medma.cdc.sink.data,
+            # medma.cdc.sink.valid,
+            # medma.cdc.sink.ready,
+            # #medma.cdc.source.data,
+            # #medma.cdc.source.valid,
+            # #medma.cdc.source.ready,
             medma.dac.sink.data,
             medma.dac.sink.valid,
             medma.dac.sink.ready,

@@ -280,7 +280,7 @@ class SimSoC(SoCCore):
             cw=dac_plat.cw,
             sys_clk_freq=sys_clk_freq)
         '''
-        self.add_csr("dac")
+        #self.add_csr("dac")
 
 
         # Create our platform (fpga interface)
@@ -315,16 +315,6 @@ class SimSoC(SoCCore):
         self.add_csr("mydma")
 
 
-        '''
-        self.submodules.dma2 = dma = DMAReader(self.sdram.crossbar.get_port(mode="read",  data_width=8),fifo_depth=4)
-        self.output_sig2 = Signal(8)
-        self.comb += [
-            dma.sink.valid.eq(medma.mydma_enables.storage[1]),
-            dma.source.ready.eq(1),
-            self.output_sig2.eq(dma.source.data)
-        ]
-        self.add_csr("dma2")
-        '''
 
 
 

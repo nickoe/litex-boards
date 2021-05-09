@@ -14,6 +14,9 @@ from litedram.common import LiteDRAMNativePort
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.stream import Endpoint
 
+from litevideo.output.core import DMAReader
+
+
 
 
 # IOs for simulation -------------------------------------------------------------------------------
@@ -115,6 +118,7 @@ class MyDMA(Module, AutoCSR):
         self.end         = Signal(awidth)
         self.length      = Signal(awidth)
         self.ticks = Signal(32)
+        self.ticks_tic = Signal(32)
 
 
         self.mydma_enables = CSRStorage(2, fields=[
@@ -126,10 +130,22 @@ class MyDMA(Module, AutoCSR):
 
 
         # DMA --------------------------------------------------------------------------------------
-        self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=16, fifo_buffered=False)
-        self.submodules += dma
+        own_dma = 0
+        if own_dma:
+            self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=16, fifo_buffered=False)
+            self.submodules += dma
+        else:
+            self.submodules.dma = dma = DMAReader(port, fifo_depth=64)
+            self.output_sig2 = Signal(32)
+            self.comb += [
+                dma.sink.valid.eq(self.mydma_enables.storage[1]),
+                dma.source.ready.eq(1),
+                dma.sink.base.eq(0x41000000),
+                dma.sink.length.eq(1024),
+                self.output_sig2.eq(dma.source.data)
+            ]
 
-        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", dma.port.data_width)], cd_from="sys", cd_to=clock_domain.name)
+        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=32)
         self.comb += self.dma.source.connect(self.cdc.sink)
 
         self.submodules.dac = dac = AlexandersDAC(platform, clock_domain)
@@ -145,41 +161,45 @@ class MyDMA(Module, AutoCSR):
                                ], description="IQ sample",)
         #data_a.eq(self.data_iq_storage.storage[0:10])
         #data_b.eq(self.data_iq_storage.storage[10:20])
-        self.output_sig = Signal(dma.port.data_width)
+        self.output_sig = Signal(port.data_width)
 
-        if isinstance(port, LiteDRAMNativePort): # addressing in dwords
-            dma_sink_addr = dma.sink.address
-        else:
-            raise NotImplementedError
+        if own_dma:
+            if isinstance(port, LiteDRAMNativePort): # addressing in dwords
+                dma_sink_addr = dma.sink.address
+            else:
+                raise NotImplementedError
 
-        #start_addr = 0x41000000
-        start_addr = int(0x1000000/(dma.port.data_width/8))
-        #start_addr = 0x0400000
+            #start_addr = 0x41000000
+            start_addr = int(0x1000000/(port.data_width/8))
+            #start_addr = 0x0400000
 
-        fsm = FSM(reset_state="IDLE")
-        self.submodules += fsm
-        fsm.act("IDLE",
-                If(self.start,
-                   NextValue(self.data_iq_addr, start_addr),
-                   NextState("RUN")
-                   ),
-                NextValue(self.ticks, 0)
-                )
-        fsm.act("RUN",
-                dma.sink.valid.eq(self.mydma_enables.storage[0]),
-                NextValue(self.ticks, self.ticks + 1),
-                If(self.data_iq_addr == (start_addr + 1024),
-                   NextState("DONE")
-                   ),
-                If(dma.sink.ready,
-                   NextValue(self.data_iq_addr, self.data_iq_addr + 1),
-                   ),
-                )
-        fsm.act("DONE",
-                self.done.eq(1),
-                NextState("IDLE"),
-                )
+            fsm = FSM(reset_state="IDLE")
+            self.submodules += fsm
+            fsm.act("IDLE",
+                    If(self.start,
+                       NextValue(self.data_iq_addr, start_addr),
+                       NextState("RUN")
+                       ),
+                    NextValue(self.ticks, 0),
+                    NextValue(self.ticks_tic, 0),
+                    )
+            fsm.act("RUN",
+                    dma.sink.valid.eq(self.mydma_enables.storage[0]),
+                    NextValue(self.ticks, self.ticks + 1),
+                    If(self.data_iq_addr == (start_addr + 1024),
+                       NextState("DONE")
+                       ),
+                    #If(dma.sink.ready & (self.ticks_tic+4 < self.ticks),
+                    If(dma.sink.ready,
+                       NextValue(self.data_iq_addr, self.data_iq_addr + 1),
+                       NextValue(self.ticks_tic, self.ticks)
+                       ),
+                    )
+            fsm.act("DONE",
+                    self.done.eq(1),
+                    NextState("IDLE"),
+                    )
 
-        self.comb += [
-            dma_sink_addr.eq(self.data_iq_addr),
-        ]
+            self.comb += [
+                dma_sink_addr.eq(self.data_iq_addr),
+            ]
