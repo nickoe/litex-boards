@@ -226,7 +226,7 @@ class BaseSoC(SoCCore):
         '''
 
         self.submodules.mydma = medma = MyDMA(platform,
-                                              self.sdram.crossbar.get_port(mode="read", data_width=32),
+                                              self.sdram.crossbar.get_port(mode="read", data_width=32, reverse=True),
                                               self.crg.cd_dac)
                                               #cd_dac)
         self.add_csr("mydma")
