@@ -310,8 +310,10 @@ class SimSoC(SoCCore):
                               self.cd_dac.clk.eq(0),
                               )
         )
+        self.clock_domains.cd_dac_180 = cd_dac_180 = ClockDomain()
+        self.comb += cd_dac_180.clk.eq(~cd_dac.clk)
 
-        self.submodules.mydma = medma = MyDMA(platform, self.sdram.crossbar.get_port(mode="read", data_width=32), cd_dac)
+        self.submodules.mydma = medma = MyDMA(platform, self.sdram.crossbar.get_port(mode="read", data_width=32), cd_dac, cd_dac_180)
         self.add_csr("mydma")
 
 
@@ -370,7 +372,7 @@ class SimSoC(SoCCore):
             #cycles_end = 2000000
             cycles_end = 20000
             cycles = Signal(32)
-            self.sync += If( (medma.mydma_enables.storage[1] == 1),
+            self.sync += If( (medma.mydma_enables.storage[0] == 1),
             cycles.eq(cycles + 1)
             )
             #self.sync += If(cycles == cycles_end, Finish())

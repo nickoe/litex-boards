@@ -69,9 +69,63 @@ class MySimPlatform(SimPlatform):
 
 
 # Other stuff
+class NicksDAC(Module):
+    def __init__(self, platform, dac_clk, dac_clk2):
+        self.sink = sink = Endpoint([('data', 32)])
+        self.running     = Signal(1)
+        self.ticks       = Signal(32)
+
+
+        pads = platform.request("dac")
+
+        # We just takes the 10 bit from each byte pair needed
+        intermediate_signal = Signal(20)
+        self.comb += intermediate_signal.eq(Cat(sink.data[0:10], self.sink.data[16:26]))
+
+        fsm = FSM(reset_state="IDLE")
+        self.submodules += fsm
+        fsm.act("IDLE",
+                If(~self.running,
+                   NextState("CONFIG")
+                   ),
+                NextValue(self.ticks, 0),
+                )
+        fsm.act("CONFIG",
+                NextValue(self.ticks, self.ticks + 1),
+                NextValue(pads.data_a, 0x120),
+                NextValue(pads.data_b, 0),
+                NextValue(pads.cw, 0),
+                NextValue(sink.ready, 1),
+                NextState("RUN"),
+                )
+        fsm.act("RUN",
+                If(sink.valid,
+                    NextValue(self.ticks, self.ticks + 1),
+                    NextValue(pads.data_a, sink.data[0:10]),
+                    NextValue(pads.data_b, sink.data[16:26]),
+                    NextValue(pads.cw, 1),
+                    NextValue(self.running, 1),
+                ).Else(
+                    NextValue(self.running, 0),
+                    NextValue(sink.ready, 0),
+                    NextState("IDLE")
+                    ),
+                )
+
+        # clocking for the DAC
+        # As the differential output is in the same bank as the other signals that are LVCMOS33 we
+        # can't really drive this as a diff out. :(
+        # And the logic inputs needs 0.64*DVdd = 2.145 V for high state..
+        #self.specials += DifferentialOutput(self.crg.cd_dac.clk, dac_plat.clkx_p, dac_plat.clkx_n)
+        self.comb += pads.clkx_p.eq(dac_clk.clk)
+        self.comb += pads.clkx_n.eq(dac_clk2.clk)
+        self.comb += pads.clkx_test.eq(dac_clk.clk)
+        self.comb += pads.clkx_test2.eq(dac_clk2.clk)
+
+
 class AlexandersDAC(Module):
     #MAX5854 DAC
-    def __init__(self, platform, dac_clk):
+    def __init__(self, platform, dac_clk, dac_clk2):
         self.sink = sink = Endpoint([('data', 32)])
 
         pads = platform.request("dac")
@@ -103,14 +157,14 @@ class AlexandersDAC(Module):
         #self.specials += DifferentialOutput(self.crg.cd_dac.clk, dac_plat.clkx_p, dac_plat.clkx_n)
 
         self.comb += pads.clkx_p.eq(dac_clk.clk)
-        #self.comb += pads.clkx_n.eq(self.crg.cd_dac_180.clk)
+        self.comb += pads.clkx_n.eq(dac_clk2.clk)
         self.comb += pads.clkx_test.eq(dac_clk.clk)
-        #self.comb += pads.clkx_test2.eq(self.crg.cd_dac_180.clk)
+        self.comb += pads.clkx_test2.eq(dac_clk2.clk)
 
 
 
 class MyDMA(Module, AutoCSR):
-    def __init__(self,platform, port, clock_domain, period=1e0):
+    def __init__(self,platform, port, clock_domain, clock_domain2):
         ashift, awidth = get_ashift_awidth(port)
         self.start       = Signal(reset=1)
         self.done        = Signal()
@@ -126,17 +180,15 @@ class MyDMA(Module, AutoCSR):
                                    CSRField("litevideodma", description="DMAReader from litevideo", size=1),
                                ], description="Enable DMA",)
 
-
-
+        self.output_sig2 = Signal(32)
 
         # DMA --------------------------------------------------------------------------------------
-        own_dma = 0
-        if own_dma:
-            self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=16, fifo_buffered=False)
+        own_dma = 1
+        if own_dma == 1:
+            self.dma = dma = LiteDRAMDMAReader(port, fifo_depth=32, fifo_buffered=True, with_csr=True)
             self.submodules += dma
         else:
-            self.submodules.dma = dma = DMAReader(port, fifo_depth=64)
-            self.output_sig2 = Signal(32)
+            self.submodules.dma = dma = DMAReader(port, fifo_depth=32)
             self.comb += [
                 dma.sink.valid.eq(self.mydma_enables.storage[1]),
                 dma.source.ready.eq(1),
@@ -145,10 +197,11 @@ class MyDMA(Module, AutoCSR):
                 self.output_sig2.eq(dma.source.data)
             ]
 
-        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=32)
+        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=64)
         self.comb += self.dma.source.connect(self.cdc.sink)
 
-        self.submodules.dac = dac = AlexandersDAC(platform, clock_domain)
+        #self.submodules.dac = dac = AlexandersDAC(platform, clock_domain, clock_domain2)
+        self.submodules.dac = dac = NicksDAC(platform, clock_domain, clock_domain2)
         self.comb += cdc.source.connect(dac.sink)
 
         #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
@@ -163,7 +216,8 @@ class MyDMA(Module, AutoCSR):
         #data_b.eq(self.data_iq_storage.storage[10:20])
         self.output_sig = Signal(port.data_width)
 
-        if own_dma:
+
+        if own_dma == 1:
             if isinstance(port, LiteDRAMNativePort): # addressing in dwords
                 dma_sink_addr = dma.sink.address
             else:

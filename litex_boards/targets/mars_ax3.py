@@ -56,8 +56,8 @@ class _CRG(Module):
         pll.create_clkout(self.cd_sys4x,     4*sys_clk_freq)
         pll.create_clkout(self.cd_sys4x_dqs, 4*sys_clk_freq, phase=90)
         pll.create_clkout(self.cd_idelay,    200e6)
-        pll.create_clkout(self.cd_dac,       10e6)
-        pll.create_clkout(self.cd_dac_180,   10e6, phase=180)
+        pll.create_clkout(self.cd_dac,       20e6)
+        pll.create_clkout(self.cd_dac_180,   20e6, phase=180)
 
         #pll.create_clkout(self.cd_eth,       25e6)
         platform.add_false_path_constraints(self.cd_sys.clk, pll.clkin) # Ignore sys_clk to pll.clkin path created by SoC's rst.
@@ -206,30 +206,13 @@ class BaseSoC(SoCCore):
             if with_etherbone:
                 self.add_etherbone(phy=self.ethphy, ip_address=eth_ip)
 
-        '''
-        # Create dac clock domain that is slower than sys clk
-        sysclk_cycles_per_dacclk_end = 3
-        hack_cycles = Signal(32)
-        dac_clk = Signal(1, reset=0)
-        self.clock_domains.cd_dac = cd_dac = ClockDomain()
-        self.sync += If(self.cd_dac.clk == 0,
-                        hack_cycles.eq(hack_cycles + 1),
-                        If(hack_cycles == sysclk_cycles_per_dacclk_end,
-                           self.cd_dac.clk.eq(1),
-                           )
-                        ).Else(
-                           hack_cycles.eq(hack_cycles - 1),
-                           If(hack_cycles == 0,
-                              self.cd_dac.clk.eq(0),
-                              )
-        )
-        '''
+
 
         self.submodules.mydma = medma = MyDMA(platform,
                                               self.sdram.crossbar.get_port(mode="read", data_width=32, reverse=True),
-                                              self.crg.cd_dac)
-                                              #cd_dac)
+                                              self.crg.cd_dac, self.crg.cd_dac_180)
         self.add_csr("mydma")
+
 
 
         # Analyzer ---------------------------------------------------------------------------------
@@ -246,9 +229,9 @@ class BaseSoC(SoCCore):
             self.mydma.done,
             self.mydma.ticks,
             self.mydma.ticks_tic,
-            # medma.dma.sink.address,
-            # medma.dma.sink.valid,
-            # medma.dma.sink.ready,
+            medma.dma.sink.address,
+            medma.dma.sink.valid,
+            medma.dma.sink.ready,
             # medma.dma.source.data,
             # medma.dma.source.valid,
             # medma.dma.source.ready,
@@ -270,6 +253,7 @@ class BaseSoC(SoCCore):
             #dac_plat.clkx_p,
             #dac_plat.clkx_n,
             self.crg.cd_dac.clk,
+            self.crg.cd_dac_180.clk,
             #self.crg.cd_sys.clk,
             #dac.dac.o_sig_a,
             #medma.dac.o_sig_b,
