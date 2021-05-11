@@ -16,6 +16,7 @@ from litex.soc.interconnect.stream import Endpoint
 
 from litevideo.output.core import DMAReader
 
+import struct
 
 
 
@@ -163,6 +164,171 @@ class AlexandersDAC(Module):
 
 
 
+class RRcosFilter(Module):
+    '''
+    RRcos filter
+    '''
+    def __init__(self, platform, clk):
+        self.sink = sink = Endpoint([('data', 32)])
+        self.source = source = Endpoint([('data', 32)])
+
+        iw=16 # filter bus width
+        ntaps = 256
+        #taps = Array(list(1 for i in range(256)))
+        mem_size = 2**8
+        #taps_data = list([7, 14, 21])
+        #taps_data = list(range(ntaps))
+        #taps_data = [7,3,5]
+        #taps_data = "filtercoeffs_16.dat"
+        taps_data = []
+        f = open("filtercoeffs_16.dat", "r")
+        for line in f:
+            a = line[0:4]
+            #b = struct.unpack('>h', bytes.fromhex(a))
+            #c = b[0]
+            taps_data.append(int(a,16))
+
+        #taps_data = [7,3,5]
+        self.specials.mem_taps = mem_taps = Memory(32, mem_size, init=taps_data)
+
+        offset_counter = Signal(max=mem_size)
+        #oc_load = Signal()
+        oc_inc = Signal()
+        self.sync += \
+            If(oc_inc,
+                offset_counter.eq(offset_counter + 1)
+            )
+
+        rdport = mem_taps.get_port()
+        self.specials += rdport
+        self.comb += rdport.adr.eq(offset_counter)
+
+
+
+        self.filter_out = Signal(iw)
+        self.load = Signal(1)
+        self.comb += source.data.eq(self.filter_out)
+
+        self.tap_sig = Signal(32)
+        self.ticks = Signal(32)
+
+
+        # Create our platform (fpga interface)
+        platform.add_source("rrcos/rrcosAXI.v")
+        platform.add_source("rrcos/genericfir.v")
+        platform.add_source("rrcos/firtap.v")
+        # Create our module (fpga description)
+        rrcosfilter_vmodule = Instance("rrcosAXI",
+                                    i_i_clk=clk,
+                                    i_i_reset=ResetSignal(),
+                                    i_i_data=sink.data[0:iw],
+                                    o_o_data=self.filter_out,
+                                    #i_i_taps=taps,
+                                    i_i_taps=rdport.dat_r[0:iw],
+                                    i_i_load=self.load,
+                                    i_i_tvalid=sink.valid,
+                                    o_i_tready=sink.ready,
+                                    i_o_tvalid=source.valid,
+                                    i_o_tready=source.ready,
+                                    p_IW=iw,
+                                    )
+        self.specials += rrcosfilter_vmodule
+
+
+        fsm = FSM(reset_state="INIT")
+        self.submodules += fsm
+        fsm.act("INIT",
+                NextValue(self.ticks, 0),
+                self.load.eq(0),
+                NextValue(offset_counter, 0),
+                NextState("LOAD_TAPS"),
+                )
+        fsm.act("LOAD_TAPS",
+                NextValue(self.ticks, self.ticks + 1),
+                #NextValue(self.tap_sig, mem_taps[self.ticks]),
+                #NextValue(oc_inc, 1),
+                oc_inc.eq(1),
+                #self.load.eq(1),
+                NextValue(self.load, 1),
+                If(ntaps-1 == self.ticks,
+                   #NextValue(oc_inc, 0),
+                   oc_inc.eq(0),
+                   self.load.eq(0),
+                   NextState("RUN"),
+                   )
+                )
+        fsm.act("RUN",
+                NextValue(self.ticks, 0x10FEDABE),
+                NextState("INIT"),
+                )
+
+
+class Upsampler(Module, AutoCSR):
+    '''
+    Upsampler
+    '''
+    def __init__(self, platform, clk):
+
+
+        width=16 # filter bus width
+        ntaps = 256
+
+        self.sink = sink = Endpoint([('data', width)])
+        self.source = source = Endpoint([('data', width)])
+
+        self.upsample_num = CSRStorage(8, fields=[
+                                   CSRField("L", description="Additional samples in output of the upsampler", size=8, reset=2),
+                               ], description="Enable DMA")
+
+        self.filter_out = Signal(width)
+        self.load = Signal(1)
+        self.comb += source.data.eq(self.filter_out)
+
+        # Create our platform (fpga interface)
+        platform.add_source("upsampler/upsampleAXI.v")
+        # Create our module (fpga description)
+        upsampler_vmodule = Instance("upsampleAXI",
+                                    i_i_clk=clk,
+                                    i_i_reset=ResetSignal(),
+                                    i_i_data=sink.data[0:width],
+                                    o_o_data=self.filter_out,
+                                    i_i_L=self.upsample_num.storage,
+                                    i_i_load=self.load,
+                                    i_i_tvalid=sink.valid,
+                                    o_i_tready=sink.ready,
+                                    i_o_tvalid=source.valid,
+                                    i_o_tready=source.ready,
+                                    p_DW=width,
+                                    )
+
+        self.specials += upsampler_vmodule
+
+
+        self.ticks = Signal(32)
+        fsm = FSM(reset_state="RESET")
+        self.submodules += fsm
+        fsm.act("RESET",
+                NextValue(self.load, 0),
+                NextValue(self.ticks, 0),
+                NextState("CONFIG"),
+                )
+        fsm.act("CONFIG",
+                If(self.ticks > 10,
+                   NextState("RUN"),
+                   NextValue(self.load, 1),
+                   ),
+                NextValue(self.ticks, self.ticks + 1),
+                )
+        fsm.act("RUN",
+                If(self.upsample_num.re,
+                   NextState("RESET"),
+                ).Else(
+                   NextValue(self.ticks, self.ticks + 2),
+                   NextValue(self.load, 0),
+                   ),
+                )
+
+
 class MyDMA(Module, AutoCSR):
     def __init__(self,platform, port, clock_domain, clock_domain2):
         ashift, awidth = get_ashift_awidth(port)
@@ -200,9 +366,15 @@ class MyDMA(Module, AutoCSR):
         self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=64)
         self.comb += self.dma.source.connect(self.cdc.sink)
 
+        self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, clock_domain.clk)
+        self.submodules.upsampler = upsampler = Upsampler(platform, clock_domain.clk)
+        self.comb += cdc.source.connect(upsampler.sink)
+
+
         #self.submodules.dac = dac = AlexandersDAC(platform, clock_domain, clock_domain2)
         self.submodules.dac = dac = NicksDAC(platform, clock_domain, clock_domain2)
-        self.comb += cdc.source.connect(dac.sink)
+        #self.comb += cdc.source.connect(dac.sink)
+        self.comb += upsampler.source.connect(dac.sink)
 
         #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
 

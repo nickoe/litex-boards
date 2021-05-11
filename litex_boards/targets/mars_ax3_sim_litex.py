@@ -369,12 +369,26 @@ class SimSoC(SoCCore):
 
 
         if trace_hack:
+            gogo = Signal(reset=0)
+
             #cycles_end = 2000000
             cycles_end = 20000
             cycles = Signal(32)
             self.sync += If( (medma.mydma_enables.storage[0] == 1),
-            cycles.eq(cycles + 1)
+                           cycles.eq(cycles + 1)
+                         )
+
+            #self.sync += If((medma.upsampler.load == 1),
+
+            '''
+            self.sync += If((medma.upsampler.upsample_num.re == 1),
+                            gogo.eq(1)
+                )
+
+            self.sync += If(gogo == 1,
+                cycles.eq(cycles + 1)
             )
+            '''
             #self.sync += If(cycles == cycles_end, Finish())
 
             self.sync += If(cycles == cycles_end,
