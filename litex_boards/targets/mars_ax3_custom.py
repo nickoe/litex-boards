@@ -12,7 +12,7 @@ from litedram.frontend.dma import LiteDRAMDMAWriter, LiteDRAMDMAReader
 from litedram.common import LiteDRAMNativePort
 
 from litex.soc.interconnect import stream
-from litex.soc.interconnect.stream import Endpoint
+from litex.soc.interconnect.stream import Endpoint, Pipeline
 
 from litevideo.output.core import DMAReader
 
@@ -162,6 +162,10 @@ class AlexandersDAC(Module):
         self.comb += pads.clkx_test.eq(dac_clk.clk)
         self.comb += pads.clkx_test2.eq(dac_clk2.clk)
 
+class NullSink(Module):
+    def __init__(self, platform, width=10):
+        self.sink = sink = Endpoint([('data', width)])
+        self.comb += sink.ready.eq(1)
 
 
 class RRcosFilter(Module):
@@ -169,11 +173,12 @@ class RRcosFilter(Module):
     RRcos filter
     '''
     def __init__(self, platform, clk):
-        self.sink = sink = Endpoint([('data', 32)])
-        self.source = source = Endpoint([('data', 32)])
+
 
         iw=16 # filter bus width
-        ntaps = 256
+        self.sink = sink = Endpoint([('data', iw)])
+        self.source = source = Endpoint([('data', iw)])
+        #ntaps = 256
         #taps = Array(list(1 for i in range(256)))
         mem_size = 2**8
         #taps_data = list([7, 14, 21])
@@ -187,8 +192,7 @@ class RRcosFilter(Module):
             #b = struct.unpack('>h', bytes.fromhex(a))
             #c = b[0]
             taps_data.append(int(a,16))
-
-        #taps_data = [7,3,5]
+        ntaps = len(taps_data)
         self.specials.mem_taps = mem_taps = Memory(32, mem_size, init=taps_data)
 
         offset_counter = Signal(max=mem_size)
@@ -241,14 +245,16 @@ class RRcosFilter(Module):
                 NextValue(self.ticks, 0),
                 self.load.eq(0),
                 NextValue(offset_counter, 0),
-                NextState("LOAD_TAPS"),
+                If(sink.valid,
+                    NextState("LOAD_TAPS"),
+                    )
                 )
         fsm.act("LOAD_TAPS",
                 NextValue(self.ticks, self.ticks + 1),
                 #NextValue(self.tap_sig, mem_taps[self.ticks]),
                 #NextValue(oc_inc, 1),
                 oc_inc.eq(1),
-                #self.load.eq(1),
+                #sink.ready(1), # don't harcode? attack to
                 NextValue(self.load, 1),
                 If(ntaps-1 == self.ticks,
                    #NextValue(oc_inc, 0),
@@ -258,8 +264,13 @@ class RRcosFilter(Module):
                    )
                 )
         fsm.act("RUN",
-                NextValue(self.ticks, 0x10FEDABE),
-                NextState("INIT"),
+                NextValue(self.ticks, self.ticks + 1),
+                #If(self.ticks > 1024,
+                   # Fake wait until retry
+                   NextValue(self.ticks, 0x10FEDABE),
+                #   NextState("INIT"),
+                #   )
+
                 )
 
 
@@ -270,15 +281,13 @@ class Upsampler(Module, AutoCSR):
     def __init__(self, platform, clk):
 
 
-        width=16 # filter bus width
+        width=16# filter bus width
         ntaps = 256
 
         self.sink = sink = Endpoint([('data', width)])
         self.source = source = Endpoint([('data', width)])
 
-        self.upsample_num = CSRStorage(8, fields=[
-                                   CSRField("L", description="Additional samples in output of the upsampler", size=8, reset=2),
-                               ], description="Enable DMA")
+        self.upsample_num = CSRStorage(8, reset=16)
 
         self.filter_out = Signal(width)
         self.load = Signal(1)
@@ -320,7 +329,8 @@ class Upsampler(Module, AutoCSR):
                 NextValue(self.ticks, self.ticks + 1),
                 )
         fsm.act("RUN",
-                If(self.upsample_num.re,
+                #If(self.upsample_num.re,
+                If(0,
                    NextState("RESET"),
                 ).Else(
                    NextValue(self.ticks, self.ticks + 2),
@@ -363,18 +373,37 @@ class MyDMA(Module, AutoCSR):
                 self.output_sig2.eq(dma.source.data)
             ]
 
-        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=64)
-        self.comb += self.dma.source.connect(self.cdc.sink)
-
-        self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, clock_domain.clk)
-        self.submodules.upsampler = upsampler = Upsampler(platform, clock_domain.clk)
-        self.comb += cdc.source.connect(upsampler.sink)
-
-
+        self.submodules.upsampler = upsampler = Upsampler(platform, ClockSignal("sys"))
+        #self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=64)
+        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", 16)], cd_from="sys", cd_to=clock_domain.name, depth=64)
+        #self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, clock_domain.clk)
+        self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, ClockSignal("sys")) # hacked clk
         #self.submodules.dac = dac = AlexandersDAC(platform, clock_domain, clock_domain2)
         self.submodules.dac = dac = NicksDAC(platform, clock_domain, clock_domain2)
+        self.submodules.nullsink = nullsink = NullSink(platform)
+
+        self.submodules.pipeline = Pipeline(
+            dma,
+            upsampler,
+            cdc,
+            rrcosfilter,
+            nullsink,
+        )
+        #self.comb += dma.source.connect(upsampler.sink)
+        #self.comb += upsampler.source.connect(cdc.sink)
+        #self.comb += cdc.source.connect(nullsink.sink)
+        #self.comb += cdc.source.connect(rrcosfilter.sink)
+        #self.comb += rrcosfilter.source.connect(dac.sink)
+
+        #self.comb += self.dma.source.connect(self.cdc.sink)
+        #self.comb += cdc.source.connect(rrcosfilter.sink)
+        #self.comb += cdc.source.connect(upsampler.sink)
+        #self.comb += rrcosfilter.source.connect(upsampler.sink)
+
+
+
         #self.comb += cdc.source.connect(dac.sink)
-        self.comb += upsampler.source.connect(dac.sink)
+        #self.comb += upsampler.source.connect(dac.sink)
 
         #NOTE Right now we just dump 1kB of IQ data at 0x41000000 with boot.json.
 

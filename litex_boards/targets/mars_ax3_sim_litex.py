@@ -375,13 +375,14 @@ class SimSoC(SoCCore):
             cycles_end = 20000
             cycles = Signal(32)
             self.sync += If( (medma.mydma_enables.storage[0] == 1),
+            #self.sync += If( (medma.rrcosfilter.sink.valid == 1),
                            cycles.eq(cycles + 1)
                          )
 
             #self.sync += If((medma.upsampler.load == 1),
 
             '''
-            self.sync += If((medma.upsampler.upsample_num.re == 1),
+            self.sync += If((medma.rrcosfilter.load == 1),
                             gogo.eq(1)
                 )
 
