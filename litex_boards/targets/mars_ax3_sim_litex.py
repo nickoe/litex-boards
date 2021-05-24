@@ -295,7 +295,7 @@ class SimSoC(SoCCore):
         self.submodules.blink = module
 
         # Create dac clock domain that is slower than sys clk
-        sysclk_cycles_per_dacclk_end = 3
+        sysclk_cycles_per_dacclk_end = 6
         hack_cycles = Signal(32)
         dac_clk = Signal(1, reset=0)
         self.clock_domains.cd_dac = cd_dac = ClockDomain()
