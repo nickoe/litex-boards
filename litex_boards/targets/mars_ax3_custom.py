@@ -168,6 +168,117 @@ class NullSink(Module):
         self.comb += sink.ready.eq(1)
 
 
+class BbFilter(Module):
+    '''
+    Upsampler and RRcos filter (baseband filter)
+    '''
+
+    def __init__(self, platform, clk):
+        iw =width = 16  # filter bus width
+        self.sink = sink = Endpoint([('data', iw)])
+        self.source = source = Endpoint([('data', iw)])
+        # ntaps = 256
+        # taps = Array(list(1 for i in range(256)))
+        mem_size = 2 ** 8
+        # taps_data = list([7, 14, 21])
+        # taps_data = list(range(ntaps))
+        # taps_data = [7,3,5]
+        # taps_data = "filtercoeffs_16.dat"
+        taps_data = []
+        f = open("filtercoeffs_16.dat", "r")
+        for line in f:
+            a = line[0:4]
+            # b = struct.unpack('>h', bytes.fromhex(a))
+            # c = b[0]
+            taps_data.append(int(a, 16))
+        ntaps = len(taps_data)
+        self.specials.mem_taps = mem_taps = Memory(32, mem_size, init=taps_data)
+
+        offset_counter = Signal(max=mem_size)
+        # oc_load = Signal()
+        oc_inc = Signal()
+        self.sync += \
+            If(oc_inc,
+               offset_counter.eq(offset_counter + 1)
+               )
+
+        rdport = mem_taps.get_port()
+        self.specials += rdport
+        self.comb += rdport.adr.eq(offset_counter)
+
+        self.filter_out = Signal(iw)
+        self.load = Signal(1)
+        self.comb += source.data.eq(self.filter_out)
+
+        self.tap_sig = Signal(32)
+        self.ticks = Signal(32)
+
+        self.upsample_num = CSRStorage(8, reset=16)
+
+
+        # Create our platform (fpga interface)
+        platform.add_source("rrcos/rrcosAXI.v")
+        platform.add_source("rrcos/genericfir.v")
+        platform.add_source("rrcos/firtap.v")
+        platform.add_source("bb_filter/BbFilterAXI.v")
+        platform.add_source("upsampler/upsampleAXI.v")
+
+
+
+        # Create our module (fpga description)
+        rrcosfilter_vmodule = Instance("BbFilterAXI",
+                                       i_i_clk=clk,
+                                       i_i_reset=ResetSignal(),
+                                       i_i_data=sink.data[0:iw],
+                                       o_o_data=self.filter_out,
+                                       # i_i_taps=taps,
+                                       i_i_taps=rdport.dat_r[0:iw],
+                                       i_i_L=self.upsample_num.storage,
+                                       i_i_load=self.load,
+                                       i_i_tvalid=sink.valid,
+                                       o_i_tready=sink.ready,
+                                       i_o_tvalid=source.valid,
+                                       i_o_tready=source.ready,
+                                       # p_IW=iw,
+                                       )
+        self.specials += rrcosfilter_vmodule
+
+        fsm = FSM(reset_state="INIT")
+        self.submodules += fsm
+        fsm.act("INIT",
+                NextValue(self.ticks, 0),
+                self.load.eq(0),
+                NextValue(offset_counter, 0),
+                If(sink.valid,
+                   NextState("LOAD_TAPS"),
+                   )
+                )
+        fsm.act("LOAD_TAPS",
+                NextValue(self.ticks, self.ticks + 1),
+                # NextValue(self.tap_sig, mem_taps[self.ticks]),
+                # NextValue(oc_inc, 1),
+                oc_inc.eq(1),
+                # sink.ready(1), # don't harcode? attack to
+                NextValue(self.load, 1),
+                If(ntaps - 1 == self.ticks,
+                   # NextValue(oc_inc, 0),
+                   oc_inc.eq(0),
+                   self.load.eq(0),
+                   NextState("RUN"),
+                   )
+                )
+        fsm.act("RUN",
+                NextValue(self.ticks, self.ticks + 1),
+                # If(self.ticks > 1024,
+                # Fake wait until retry
+                NextValue(self.ticks, 0x10FEDABE),
+                #   NextState("INIT"),
+                #   )
+
+                )
+
+
+
 class RRcosFilter(Module):
     '''
     RRcos filter
@@ -373,20 +484,22 @@ class MyDMA(Module, AutoCSR):
                 self.output_sig2.eq(dma.source.data)
             ]
 
-        self.submodules.upsampler = upsampler = Upsampler(platform, ClockSignal("sys"))
+        #self.submodules.upsampler = upsampler = Upsampler(platform, ClockSignal("sys"))
         #self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=64)
-        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", 16)], cd_from="sys", cd_to=clock_domain.name, depth=64)
-        self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, clock_domain.clk)
+        #self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", 16)], cd_from="sys", cd_to=clock_domain.name, depth=64)
+        #self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, clock_domain.clk)
         #self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, ClockSignal("sys")) # hacked clk
         #self.submodules.dac = dac = AlexandersDAC(platform, clock_domain, clock_domain2)
+        self.submodules.bbfilter = bbfilter = BbFilter(platform, clock_domain.clk)
         self.submodules.dac = dac = NicksDAC(platform, clock_domain, clock_domain2)
         self.submodules.nullsink = nullsink = NullSink(platform)
 
         self.submodules.pipeline = Pipeline(
             dma,
-            upsampler,
-            cdc,
-            rrcosfilter,
+            bbfilter,
+            #upsampler,
+            #cdc,
+            #rrcosfilter,
             nullsink,
         )
         #self.comb += dma.source.connect(upsampler.sink)
