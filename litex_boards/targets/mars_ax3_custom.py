@@ -486,16 +486,19 @@ class MyDMA(Module, AutoCSR):
 
         #self.submodules.upsampler = upsampler = Upsampler(platform, ClockSignal("sys"))
         #self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", port.data_width)], cd_from="sys", cd_to=clock_domain.name, depth=64)
-        #self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", 16)], cd_from="sys", cd_to=clock_domain.name, depth=64)
+        self.submodules.cdc = cdc = stream.ClockDomainCrossing([("data", 16)], cd_from="sys", cd_to=clock_domain.name, depth=64)
         #self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, clock_domain.clk)
         #self.submodules.rrcosfilter = rrcosfilter = RRcosFilter(platform, ClockSignal("sys")) # hacked clk
         #self.submodules.dac = dac = AlexandersDAC(platform, clock_domain, clock_domain2)
-        self.submodules.bbfilter = bbfilter = BbFilter(platform, clock_domain.clk)
+        #self.submodules.bbfilter = bbfilter = BbFilter(platform, ClockSignal("sys"))
+        #self.submodules.bbfilter = bbfilter = BbFilter(platform, ClockSignal("dac"))
+        self.submodules.bbfilter = bbfilter =  ClockDomainsRenamer("dac")(BbFilter(platform, clock_domain))
         self.submodules.dac = dac = NicksDAC(platform, clock_domain, clock_domain2)
         self.submodules.nullsink = nullsink = NullSink(platform)
 
         self.submodules.pipeline = Pipeline(
             dma,
+            cdc,
             bbfilter,
             #upsampler,
             #cdc,
