@@ -372,7 +372,7 @@ class SimSoC(SoCCore):
             gogo = Signal(reset=0)
 
             #cycles_end = 2000000
-            cycles_end = 20000
+            cycles_end = 40000
             cycles = Signal(32)
             self.sync += If( (medma.mydma_enables.storage[0] == 1),
             #self.sync += If( (medma.rrcosfilter.sink.valid == 1),

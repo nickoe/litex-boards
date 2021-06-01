@@ -173,11 +173,11 @@ class BbFilter(Module):
     Upsampler and RRcos filter (baseband filter)
     '''
 
-    def __init__(self, platform, clk):
+    def __init__(self, platform, clk_domain: ClockDomain):
         iw =width = 16  # filter bus width
         self.sink = sink = Endpoint([('data', iw)])
         self.source = source = Endpoint([('data', iw)])
-        # ntaps = 256
+        ntaps = 256
         # taps = Array(list(1 for i in range(256)))
         mem_size = 2 ** 8
         # taps_data = list([7, 14, 21])
@@ -191,7 +191,7 @@ class BbFilter(Module):
             # b = struct.unpack('>h', bytes.fromhex(a))
             # c = b[0]
             taps_data.append(int(a, 16))
-        ntaps = len(taps_data)
+        #ntaps = len(taps_data)
         self.specials.mem_taps = mem_taps = Memory(32, mem_size, init=taps_data)
 
         offset_counter = Signal(max=mem_size)
@@ -217,25 +217,28 @@ class BbFilter(Module):
 
 
         # Create our platform (fpga interface)
-        platform.add_source("rrcos/rrcosAXI.v")
-        platform.add_source("rrcos/genericfir.v")
-        platform.add_source("rrcos/firtap.v")
         platform.add_source("bb_filter/BbFilterAXI.v")
+        platform.add_source("rrcos/firtap.v")
+        platform.add_source("rrcos/genericfir.v")
+        platform.add_source("rrcos/rrcosAXI.v")
         platform.add_source("upsampler/upsampleAXI.v")
 
-
+        self.enable_filter = Signal(1)
+        self.local_reset = Signal(1)
 
         # Create our module (fpga description)
         rrcosfilter_vmodule = Instance("BbFilterAXI",
-                                       i_i_clk=clk,
-                                       i_i_reset=ResetSignal(),
+                                       i_i_clk=clk_domain.clk,
+                                       #i_i_reset=ResetSignal(),
+                                       i_i_reset=self.local_reset,
                                        i_i_data=sink.data[0:iw],
                                        o_o_data=self.filter_out,
                                        # i_i_taps=taps,
                                        i_i_taps=rdport.dat_r[0:iw],
                                        i_i_L=self.upsample_num.storage,
                                        i_i_load=self.load,
-                                       i_i_tvalid=sink.valid,
+                                       #i_i_tvalid=sink.valid,
+                                       i_i_tvalid=self.enable_filter,
                                        o_i_tready=sink.ready,
                                        i_o_tvalid=source.valid,
                                        i_o_tready=source.ready,
@@ -243,32 +246,43 @@ class BbFilter(Module):
                                        )
         self.specials += rrcosfilter_vmodule
 
-        fsm = FSM(reset_state="INIT")
-        self.submodules += fsm
-        fsm.act("INIT",
+        fsm_fisk = FSM(reset_state="INIT")
+        self.submodules += fsm_fisk
+        fsm_fisk.act("INIT",
                 NextValue(self.ticks, 0),
                 self.load.eq(0),
+                self.local_reset.eq(1),
                 NextValue(offset_counter, 0),
                 If(sink.valid,
+                   self.enable_filter.eq(0),
+                   #NextState("LOAD_TAPS"),
+                   NextState("ZERO_TAPS"),
+                   )
+                )
+        fsm_fisk.act("ZERO_TAPS",
+                NextValue(self.ticks, self.ticks + 1),
+                NextValue(self.load, 1),
+                If((ntaps - len(taps_data) - 1) == self.ticks,
                    NextState("LOAD_TAPS"),
                    )
                 )
-        fsm.act("LOAD_TAPS",
+        fsm_fisk.act("LOAD_TAPS",
                 NextValue(self.ticks, self.ticks + 1),
                 # NextValue(self.tap_sig, mem_taps[self.ticks]),
                 # NextValue(oc_inc, 1),
                 oc_inc.eq(1),
                 # sink.ready(1), # don't harcode? attack to
                 NextValue(self.load, 1),
-                If(ntaps - 1 == self.ticks,
+                If(ntaps   - 1 == self.ticks,
                    # NextValue(oc_inc, 0),
                    oc_inc.eq(0),
                    self.load.eq(0),
                    NextState("RUN"),
                    )
                 )
-        fsm.act("RUN",
+        fsm_fisk.act("RUN",
                 NextValue(self.ticks, self.ticks + 1),
+                self.enable_filter.eq(sink.valid),
                 # If(self.ticks > 1024,
                 # Fake wait until retry
                 NextValue(self.ticks, 0x10FEDABE),
@@ -357,6 +371,7 @@ class RRcosFilter(Module):
                 self.load.eq(0),
                 NextValue(offset_counter, 0),
                 If(sink.valid,
+                #If(,
                     NextState("LOAD_TAPS"),
                     )
                 )
